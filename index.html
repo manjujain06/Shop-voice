@@ -1,0 +1,2720 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+
+<script>
+// ── Android WebView detection ─────────────────────────────────────────────
+// When running inside our native APK, setAllowUniversalAccessFromFileURLs=true
+// means voice/mic works directly. We detect this and skip all server requirements.
+window.IS_ANDROID_APP = /Android/i.test(navigator.userAgent) && 
+                         typeof window.Android !== 'undefined' ||
+                         (navigator.userAgent.includes('wv') && /Android/i.test(navigator.userAgent));
+
+// Force-enable voice on Android WebView - no localhost needed
+if (window.IS_ANDROID_APP || /Android.*wv/i.test(navigator.userAgent)) {
+  window.VOICE_ALLOWED = true;
+}
+// Also allow if running via any http/https
+if (location.protocol === 'http:' || location.protocol === 'https:') {
+  window.VOICE_ALLOWED = true;  
+}
+</script>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+<meta name="theme-color" content="#1a472a">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>ShopVoice — Grocery Billing</title>
+<link rel="manifest" href="manifest.json">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans:wght@400;500;600;700&family=Noto+Sans+Kannada:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --green-dark: #1a472a;
+    --green-mid: #2d6a4f;
+    --green-light: #52b788;
+    --green-pale: #d8f3dc;
+    --amber: #f4a261;
+    --amber-dark: #e76f51;
+    --red: #e63946;
+    --text-dark: #1b1b1b;
+    --text-mid: #555;
+    --text-light: #888;
+    --bg: #f9fafb;
+    --surface: #ffffff;
+    --border: #e0e0e0;
+    --radius: 12px;
+    --shadow: 0 2px 8px rgba(0,0,0,0.08);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  body { font-family: 'Noto Sans', sans-serif; background: #f0f2f5; color: #1b1b1b; min-height: 100vh; padding-bottom: 72px; }
+
+  /* ── TOPBAR ── */
+  .topbar {
+    background: linear-gradient(135deg, #1a472a 0%, #2d6a4f 100%);
+    color: white; padding: 0 14px;
+    height: 56px; display: flex; align-items: center; justify-content: space-between;
+    position: sticky; top: 0; z-index: 100; box-shadow: 0 2px 8px rgba(0,0,0,0.25);
+  }
+  .topbar-left { display: flex; align-items: center; gap: 10px; }
+  .topbar-logo { background: #e07b39; border-radius: 8px; width: 36px; height: 36px;
+    display: flex; align-items: center; justify-content: center; font-size: 20px; flex-shrink:0; }
+  .topbar-title { font-size: 17px; font-weight: 700; letter-spacing: 0.3px; }
+  .topbar-right { display: flex; gap: 8px; }
+  .icon-btn { background: rgba(255,255,255,0.18); border: none; color: white;
+    width: 36px; height: 36px; border-radius: 8px; cursor: pointer; font-size: 18px;
+    display: flex; align-items: center; justify-content: center; }
+  .icon-btn.red-btn { background: #c0392b; }
+
+  /* ── BILLING MODE TABS ── */
+  .mode-tabs { display: flex; background: #1a472a; padding: 0 14px 10px; gap: 0; }
+  .mode-tab { flex: 1; padding: 9px 0; text-align: center; font-size: 14px; font-weight: 600;
+    color: rgba(255,255,255,0.6); cursor: pointer; border-radius: 8px; transition: all 0.2s; }
+  .mode-tab.active { background: #52b788; color: white; }
+
+  /* ── SEARCH BAR ── */
+  .search-bar-row { display: flex; gap: 8px; padding: 10px 12px; background: white;
+    border-bottom: 1px solid #e8e8e8; align-items: center; }
+  .search-bar-wrap { flex: 1; display: flex; align-items: center; gap: 8px;
+    background: #f4f6f8; border-radius: 10px; padding: 8px 12px; }
+  .search-bar-wrap input { flex: 1; border: none; background: transparent; font-size: 16px;
+    outline: none; color: #333; }
+  .search-bar-wrap input::placeholder { color: #aaa; }
+  .scan-icon-btn { background: none; border: none; cursor: pointer; font-size: 22px;
+    padding: 0; line-height:1; }
+  .search-bar-row .add-btn { background: #1a472a; color: white; border: none;
+    padding: 9px 16px; border-radius: 10px; font-size: 14px; font-weight: 700; cursor: pointer; }
+
+  /* ── BILL META ROW ── */
+  .bill-meta-row { background: #f0faf4; display: flex; align-items: center; justify-content: space-between;
+    padding: 10px 14px; border-bottom: 2px solid #52b788; font-size: 15px; color: #333; flex-wrap:wrap; gap:4px; font-weight:500; }
+  .bill-meta-row strong { color: #1a472a; }
+
+  /* ── CART TABLE ── */
+  .cart-wrap { background: white; margin: 8px; border-radius: 12px;
+    overflow: hidden; box-shadow: 0 1px 6px rgba(0,0,0,0.08); }
+  .cart-thead { display: grid; grid-template-columns: 26px 1fr 100px 58px 58px 26px;
+    background: #1a472a; color: white; font-size: 13px; font-weight: 700;
+    padding: 8px 8px; gap: 4px; align-items: center; }
+  .cart-tbody { max-height: 38vh; overflow-y: auto; }
+  .cart-row { display: grid; grid-template-columns: 28px 1fr 90px 56px 52px 30px;
+    padding: 8px 8px; gap: 4px; align-items: center; border-bottom: 1px solid #f0f0f0;
+    font-size: 13px; }
+  .cart-row:last-child { border-bottom: none; }
+  .cart-row:nth-child(even) { background: #fafafa; }
+  .row-num { color: #52b788; font-weight: 800; font-size: 17px; }
+  .row-name { font-weight: 700; font-size: 15px; line-height: 1.3; }
+  .row-name-sub { font-size: 10px; color: #888; margin-top: 1px; }
+  .qty-cell { display: flex; align-items: center; gap: 3px; }
+  .qty-minus { background: #e74c3c; color: white; border: none; border-radius: 7px;
+    width: 30px; height: 30px; font-size: 20px; cursor: pointer; display: flex;
+    align-items: center; justify-content: center; flex-shrink:0; font-weight:700; line-height:1; }
+  .qty-plus  { background: #27ae60; color: white; border: none; border-radius: 7px;
+    width: 30px; height: 30px; font-size: 20px; cursor: pointer; display: flex;
+    align-items: center; justify-content: center; flex-shrink:0; font-weight:700; line-height:1; }
+  .qty-val { font-weight: 800; font-size: 16px; min-width: 26px; text-align: center; }
+  .qty-blink { animation: qtyBlink 0.5s ease-in-out 5; border-radius: 6px; }
+  @keyframes qtyBlink { 0%,100%{background:transparent;color:inherit} 50%{background:#f4a261;color:white;transform:scale(1.15)} }
+  .qty-wt-input { width: 52px; padding: 3px 4px; border: 1px solid #52b788;
+    border-radius: 5px; font-size: 12px; text-align: center; }
+  .row-rate { font-size: 13px; color: #555; text-align: right; font-weight:600; }
+  .row-amt { font-weight: 800; font-size: 16px; text-align: right; color: #1a472a; }
+  .row-del { background: none; border: none; color: #ccc; cursor: pointer; font-size: 16px;
+    padding: 0; display: flex; align-items: center; justify-content: center; }
+  .row-del:active { color: #e74c3c; }
+  .cart-empty-state { padding: 32px 16px; text-align: center; color: #aaa; }
+  .cart-empty-state .ei { font-size: 40px; margin-bottom: 8px; }
+
+  /* ── TOTAL BAR ── */
+  .total-bar { background: white; margin: 0 8px; border-radius: 0 0 12px 12px;
+    padding: 10px 14px; display: flex; justify-content: space-between; align-items: center;
+    border-top: 2px solid #f0f0f0; }
+  .total-bar-label { font-size: 14px; color: #555; }
+  .total-bar-label span { font-weight: 700; color: #1a472a; }
+  .total-bar-amount { font-size: 26px; font-weight: 900; color: #1a472a; }
+
+  /* ── SEND TO LAPTOP BUTTON ── */
+  .send-laptop-btn { display: block; margin: 10px 8px 6px; width: calc(100% - 16px);
+    background: linear-gradient(135deg, #1a472a, #2d6a4f); color: white;
+    border: none; border-radius: 10px; padding: 13px; font-size: 15px; font-weight: 700;
+    cursor: pointer; letter-spacing: 0.5px; box-shadow: 0 3px 10px rgba(26,71,42,0.3); }
+
+  /* ── DISCOUNT ROW ── */
+  .discount-row { display: flex; align-items: center; gap: 10px; margin: 4px 8px;
+    background: white; border-radius: 8px; padding: 8px 14px; font-size: 13px; color: #555; }
+  .discount-row input { width: 56px; padding: 5px; border: 1px solid #ddd;
+    border-radius: 6px; font-size: 13px; text-align: center; }
+
+  /* ── LOW STOCK ALERT ── */
+  .low-stock-bar { margin: 4px 8px; background: #fff8e1; border-left: 4px solid #f4a261;
+    border-radius: 0 8px 8px 0; padding: 7px 12px; font-size: 12px; color: #856404;
+    display: none; }
+  .low-stock-bar.show { display: block; }
+
+  /* ── MID ACTIONS ROW ── */
+  .mid-actions { display: flex; gap: 8px; margin: 6px 8px; }
+  .mid-btn { flex: 1; padding: 9px 4px; border: none; border-radius: 9px;
+    font-size: 12px; font-weight: 600; cursor: pointer; display: flex;
+    flex-direction: column; align-items: center; gap: 2px; }
+  .mid-btn .mb-icon { font-size: 18px; }
+  .mid-btn.pause-btn  { background: #e74c3c; color: white; }
+  .mid-btn.clear-btn2 { background: #3498db; color: white; }
+  .mid-btn.grid-btn   { background: #8e44ad; color: white; }
+  .mid-btn.items-btn  { background: #2980b9; color: white; }
+
+  /* ── VOICE SPEAK BUTTON ── */
+  .speak-btn-wrap { margin: 8px 8px 6px; }
+  .speak-big-btn { width: 100%; background: linear-gradient(135deg, #e07b39, #f4a261);
+    color: white; border: none; border-radius: 16px; padding: 16px 20px;
+    display: flex; align-items: center; gap: 16px; cursor: pointer;
+    box-shadow: 0 4px 16px rgba(224,123,57,0.4); }
+  .speak-big-btn.listening { animation: speakPulse 1s infinite;
+    background: linear-gradient(135deg, #c0392b, #e74c3c); }
+  @keyframes speakPulse { 0%,100%{box-shadow:0 4px 16px rgba(231,76,60,0.4)}
+    50%{box-shadow:0 4px 32px rgba(231,76,60,0.8)} }
+  .speak-mic-circle { width: 52px; height: 52px; border-radius: 50%; background: rgba(255,255,255,0.25);
+    display: flex; align-items: center; justify-content: center; font-size: 28px; flex-shrink: 0; }
+  .speak-text-wrap { text-align: left; }
+  .speak-kannada { font-family: 'Noto Sans Kannada', sans-serif; font-size: 17px;
+    font-weight: 600; opacity: 0.9; }
+  .speak-english { font-size: 20px; font-weight: 800; letter-spacing: 0.3px; }
+  .speak-lang { font-size: 12px; opacity: 0.8; }
+  .voice-heard-bar { background: rgba(255,255,255,0.15); border-radius: 8px;
+    padding: 6px 12px; margin-top: 8px; font-size: 14px; font-weight: 600;
+    min-height: 30px; text-align: center; display: none; }
+  .voice-heard-bar.show { display: block; }
+
+  /* ── BOTTOM TOTAL STRIP ── */
+  .bottom-total { position: fixed; bottom: 60px; left: 0; right: 0; z-index: 90;
+    background: #f8f9fa; border-top: 1px solid #e0e0e0;
+    display: flex; align-items: center; justify-content: center; gap: 12px;
+    padding: 8px 16px; }
+  .bottom-total-icon { font-size: 22px; }
+  .bottom-total-text { font-size: 15px; font-weight: 600; color: #555; }
+  .bottom-total-amount { font-size: 24px; font-weight: 900; color: #1a472a; }
+
+  /* ── BOTTOM NAV ── */
+  .bottom-nav { position: fixed; bottom: 0; left: 0; right: 0; z-index: 100;
+    background: linear-gradient(135deg, #1a472a, #2d6a4f);
+    display: flex; height: 60px; }
+  .bottom-nav-btn { flex: 1; display: flex; flex-direction: column; align-items: center;
+    justify-content: center; gap: 2px; color: rgba(255,255,255,0.7);
+    cursor: pointer; border: none; background: transparent; font-size: 10px;
+    font-weight: 600; transition: all 0.2s; }
+  .bottom-nav-btn.active { color: white; }
+  .bottom-nav-btn .bn-icon { font-size: 22px; }
+  .bottom-nav-btn.danger { color: #ff8a80; }
+
+  /* ── SUGGESTIONS ── */
+  .suggestions { background: white; border: 1px solid #e0e0e0; border-radius: 10px;
+    max-height: 200px; overflow-y: auto; margin: 0 8px 6px; display: none;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+  .suggestion-item { padding: 10px 14px; cursor: pointer; border-bottom: 1px solid #f0f0f0;
+    font-size: 14px; }
+  .suggestion-item:last-child { border-bottom: none; }
+  .suggestion-item:active { background: #d8f3dc; }
+  .sug-name { font-weight: 600; }
+  .sug-price { color: #2d6a4f; font-weight: 600; }
+
+  /* ── CUSTOMER INPUT ── */
+  .customer-strip { display: flex; gap: 8px; padding: 0 8px 6px; }
+  .customer-strip input { flex: 1; padding: 9px 12px; border: 1px solid #e0e0e0;
+    border-radius: 8px; font-size: 13px; outline: none; background: white; }
+
+  /* ── OTHER PAGES (keep functional) ── */
+  .page { display: none; padding-bottom: 80px; }
+  .page.active { display: block; }
+  #page-billing { padding: 0; }
+  #page-items, #page-bills, #page-wifi, #page-import { padding: 12px 0 80px; }
+
+  .section-card { background: white; border-radius: 12px; padding: 16px; margin: 0 8px 12px;
+    box-shadow: 0 1px 6px rgba(0,0,0,0.07); }
+  .section-title { font-weight: 700; font-size: 15px; margin-bottom: 14px; color: #1a472a; }
+  .form-row { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+  .form-group { flex: 1; min-width: 120px; }
+  .form-group label { display: block; font-size: 12px; color: #555; margin-bottom: 4px; font-weight: 500; }
+  .form-group input, .form-group select { width: 100%; padding: 10px 12px; border: 1px solid #e0e0e0;
+    border-radius: 8px; font-size: 14px; outline: none; font-family: inherit; }
+  .form-group input:focus, .form-group select:focus { border-color: #52b788; }
+  .form-submit { width: 100%; padding: 12px; background: #1a472a; color: white;
+    border: none; border-radius: 10px; font-size: 15px; font-weight: 600; cursor: pointer; }
+  .items-search { width: 100%; padding: 12px 14px; border: 1px solid #e0e0e0;
+    border-radius: 10px; font-size: 14px; outline: none; margin-bottom: 12px; }
+  .items-list { max-height: 60vh; overflow-y: auto; }
+  .item-card { background: white; border: 1px solid #e8e8e8; border-radius: 10px;
+    padding: 12px; margin-bottom: 8px; }
+  .item-card-top { display: flex; justify-content: space-between; align-items: flex-start; }
+  .item-name-badge { display: flex; align-items: center; gap: 8px; flex-wrap:wrap; }
+  .item-name { font-weight: 600; font-size: 14px; }
+  .item-code { font-size: 11px; background: #d8f3dc; color: #1a472a; padding: 2px 8px; border-radius: 12px; }
+  .item-category { font-size: 11px; background: #fff3cd; color: #856404; padding: 2px 8px; border-radius: 12px; }
+  .item-prices { display: flex; gap: 12px; margin-top: 6px; font-size: 13px; }
+  .price-tag { display: flex; flex-direction: column; }
+  .price-label { font-size: 10px; color: #888; }
+  .price-val { font-weight: 600; color: #2d6a4f; }
+  .item-actions { display: flex; gap: 6px; }
+  .item-edit-btn { background: #d8f3dc; border: none; color: #1a472a; padding: 5px 10px;
+    border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: 500; }
+  .item-del-btn { background: #fde8e8; border: none; color: #e63946; padding: 5px 10px;
+    border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: 500; }
+  .stats-bar { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin: 0 8px 12px; }
+  .stat-card { background: white; border-radius: 10px; padding: 12px; text-align: center;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.06); }
+  .stat-val { font-size: 20px; font-weight: 700; color: #1a472a; }
+  .stat-label { font-size: 11px; color: #888; margin-top: 2px; }
+  .bill-filter { display: flex; gap: 8px; margin: 0 8px 12px; }
+  .bill-filter input { flex: 1; padding: 10px 14px; border: 1px solid #e0e0e0;
+    border-radius: 10px; font-size: 14px; outline: none; }
+  .bills-list { max-height: 60vh; overflow-y: auto; padding: 0 8px; }
+  .bill-card { background: white; border: 1px solid #e0e0e0; border-radius: 10px;
+    padding: 14px; margin-bottom: 10px; cursor: pointer; }
+  .bill-card-header { display: flex; justify-content: space-between; align-items: center; }
+  .bill-number { font-weight: 700; font-size: 15px; color: #1a472a; }
+  .bill-amount { font-weight: 700; font-size: 16px; }
+  .bill-meta { font-size: 12px; color: #888; margin-top: 4px; }
+  .bill-card-actions { display: flex; gap: 8px; margin-top: 10px; }
+  .bill-action-btn { flex: 1; padding: 8px; border-radius: 8px; border: none;
+    font-size: 13px; font-weight: 500; cursor: pointer; }
+  .bill-print-btn { background: #d8f3dc; color: #1a472a; }
+  .bill-del-btn { background: #fde8e8; color: #e63946; }
+  .bill-wifi-btn { background: #e8f4fd; color: #0066cc; }
+  .wifi-section { background: white; border-radius: 12px; padding: 16px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.06); margin: 0 8px 14px; }
+  .status-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; margin-right: 6px; }
+  .import-zone { border: 2px dashed #52b788; border-radius: 12px; padding: 24px;
+    text-align: center; color: #555; cursor: pointer; margin-bottom: 12px; display: block; }
+  .import-zone input[type=file] { display: none; }
+  .toast { position: fixed; bottom: 130px; left: 50%; transform: translateX(-50%);
+    background: #333; color: white; padding: 10px 20px; border-radius: 24px;
+    font-size: 14px; z-index: 400; opacity: 0; transition: opacity 0.3s; pointer-events: none;
+    white-space: nowrap; max-width: 90vw; overflow: hidden; text-overflow: ellipsis; }
+  .toast.show { opacity: 1; }
+  .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5);
+    z-index: 200; display: none; align-items: flex-end; }
+  .modal-overlay.show { display: flex; }
+  .modal { background: white; border-radius: 16px 16px 0 0; padding: 20px;
+    width: 100%; max-height: 90vh; overflow-y: auto; animation: slideUp 0.3s ease; }
+  @keyframes slideUp { from{transform:translateY(100%)} to{transform:translateY(0)} }
+  .modal-title { font-size: 18px; font-weight: 700; margin-bottom: 16px; }
+  .modal-close { position: absolute; right: 20px; top: 20px; background: #e0e0e0;
+    border: none; width: 32px; height: 32px; border-radius: 50%; cursor: pointer;
+    font-size: 18px; display: flex; align-items: center; justify-content: center; }
+  .receipt-preview { font-family: 'Courier New', monospace; font-size: 13px;
+    background: white; padding: 16px; border: 1px dashed #e0e0e0; border-radius: 8px;
+    white-space: pre; overflow-x: auto; }
+  .bill-btn { flex: 1; padding: 14px; border-radius: 10px; border: none;
+    font-size: 14px; font-weight: 600; cursor: pointer; }
+  .bill-btn.primary { background: #1a472a; color: white; }
+  .bill-btn.secondary { background: #f4a261; color: white; }
+  .bill-actions { display: flex; gap: 10px; margin-top: 14px; }
+  .empty-state { text-align: center; padding: 40px 20px; color: #888; }
+  .empty-icon { font-size: 48px; margin-bottom: 12px; }
+
+  @media print {
+    body * { visibility: hidden; }
+    .receipt-print-area, .receipt-print-area * { visibility: visible; }
+    .receipt-print-area { position: fixed; left: 0; top: 0; width: 72mm;
+      font-family: monospace; font-size: 12px; }
+  }
+  /* TOP BAR */
+  .topbar { background: var(--green-dark); color: white; padding: 12px 16px; display: flex; align-items: center; justify-content: space-between; position: sticky; top: 0; z-index: 100; }
+  .topbar-title { font-size: 18px; font-weight: 700; letter-spacing: 0.5px; }
+  .topbar-sub { font-size: 11px; opacity: 0.7; }
+  .topbar-right { display: flex; gap: 8px; }
+  .icon-btn { background: rgba(255,255,255,0.15); border: none; color: white; width: 36px; height: 36px; border-radius: 8px; cursor: pointer; font-size: 18px; display: flex; align-items: center; justify-content: center; }
+
+  /* NAV TABS */
+  .nav-tabs { display: flex; background: var(--surface); border-bottom: 1px solid var(--border); overflow-x: auto; scrollbar-width: none; position: sticky; top: 56px; z-index: 99; }
+  .nav-tabs::-webkit-scrollbar { display: none; }
+  .nav-tab { flex: 1; min-width: 80px; padding: 10px 4px; text-align: center; font-size: 11px; font-weight: 500; color: var(--text-light); cursor: pointer; border-bottom: 3px solid transparent; white-space: nowrap; transition: all 0.2s; }
+  .nav-tab.active { color: var(--green-dark); border-bottom-color: var(--green-dark); }
+  .nav-tab .tab-icon { font-size: 20px; display: block; margin-bottom: 2px; }
+
+  /* PAGE SECTIONS */
+  .page { display: none; padding: 16px; }
+  .page.active { display: block; }
+
+  /* BILLING PAGE */
+  .voice-section { background: var(--green-dark); border-radius: var(--radius); padding: 20px; margin-bottom: 16px; text-align: center; color: white; }
+  .voice-btn { width: 80px; height: 80px; border-radius: 50%; background: white; border: none; cursor: pointer; font-size: 36px; margin: 0 auto 12px; display: flex; align-items: center; justify-content: center; transition: all 0.2s; box-shadow: 0 0 0 0 rgba(255,255,255,0.4); }
+  .voice-btn.listening { animation: pulse 1.2s infinite; background: #ff4444; }
+  @keyframes pulse { 0%,100%{box-shadow:0 0 0 0 rgba(255,255,255,0.4)} 50%{box-shadow:0 0 0 16px rgba(255,255,255,0)} }
+  .voice-status { font-size: 13px; opacity: 0.85; margin-bottom: 8px; }
+  .voice-heard { font-size: 16px; font-weight: 600; min-height: 24px; }
+
+  .manual-add { display: flex; gap: 8px; margin-bottom: 16px; }
+  .search-input { flex: 1; padding: 12px 14px; border: 1px solid var(--border); border-radius: 10px; font-size: 15px; outline: none; background: var(--surface); }
+  .search-input:focus { border-color: var(--green-light); }
+  .add-btn { background: var(--green-dark); color: white; border: none; padding: 12px 20px; border-radius: 10px; font-size: 15px; cursor: pointer; font-weight: 600; }
+
+  .suggestions { background: white; border: 1px solid var(--border); border-radius: 10px; max-height: 200px; overflow-y: auto; margin-top: -10px; margin-bottom: 16px; display: none; }
+  .suggestion-item { padding: 10px 14px; cursor: pointer; border-bottom: 1px solid var(--border); font-size: 14px; }
+  .suggestion-item:hover { background: var(--green-pale); }
+  .suggestion-item:last-child { border-bottom: none; }
+  .sug-name { font-weight: 500; }
+  .sug-price { color: var(--green-mid); font-weight: 600; }
+
+  /* CART */
+  .cart-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+  .cart-title { font-weight: 700; font-size: 16px; }
+  .clear-btn { font-size: 12px; color: var(--red); background: none; border: 1px solid var(--red); border-radius: 6px; padding: 4px 10px; cursor: pointer; }
+  .cart-table { width: 100%; border-collapse: collapse; background: var(--surface); border-radius: var(--radius); overflow: hidden; box-shadow: var(--shadow); }
+  .cart-table th { background: var(--green-dark); color: white; padding: 10px 8px; font-size: 12px; text-align: left; }
+  .cart-table td { padding: 10px 8px; font-size: 13px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+  .cart-table tr:last-child td { border-bottom: none; }
+  .qty-ctrl { display: flex; align-items: center; gap: 6px; }
+  .qty-btn { width: 26px; height: 26px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg); cursor: pointer; font-size: 16px; display: flex; align-items: center; justify-content: center; }
+  .del-row { background: none; border: none; color: var(--red); cursor: pointer; font-size: 18px; }
+  .price-editable { border: 1px solid transparent; border-radius: 6px; padding: 2px 4px; width: 70px; font-size: 13px; text-align: right; animation: blink-border 1.5s infinite; background: transparent; }
+  @keyframes blink-border { 0%,100%{border-color:transparent} 50%{border-color:var(--amber)} }
+  .price-editable:focus { outline: none; border-color: var(--green-light); animation: none; }
+  
+  .cart-total { background: var(--surface); border-radius: var(--radius); padding: 16px; margin-top: 12px; box-shadow: var(--shadow); }
+  .total-row { display: flex; justify-content: space-between; padding: 4px 0; font-size: 14px; }
+  .total-row.grand { font-weight: 700; font-size: 18px; color: var(--green-dark); border-top: 2px solid var(--border); margin-top: 8px; padding-top: 8px; }
+  .bill-actions { display: flex; gap: 10px; margin-top: 14px; }
+  .bill-btn { flex: 1; padding: 14px; border-radius: 10px; border: none; font-size: 14px; font-weight: 600; cursor: pointer; transition: all 0.2s; }
+  .bill-btn.primary { background: var(--green-dark); color: white; }
+  .bill-btn.secondary { background: var(--amber); color: white; }
+  .bill-btn:active { transform: scale(0.97); }
+
+  .customer-row { display: flex; gap: 8px; margin-bottom: 12px; }
+  .customer-row input { flex: 1; padding: 10px 12px; border: 1px solid var(--border); border-radius: 10px; font-size: 14px; outline: none; }
+  .customer-row input:focus { border-color: var(--green-light); }
+
+  /* ITEMS DB PAGE */
+  .section-card { background: var(--surface); border-radius: var(--radius); padding: 16px; margin-bottom: 16px; box-shadow: var(--shadow); }
+  .section-title { font-weight: 700; font-size: 15px; margin-bottom: 14px; color: var(--green-dark); }
+  .form-row { display: flex; gap: 8px; margin-bottom: 10px; flex-wrap: wrap; }
+  .form-group { flex: 1; min-width: 120px; }
+  .form-group label { display: block; font-size: 12px; color: var(--text-mid); margin-bottom: 4px; font-weight: 500; }
+  .form-group input, .form-group select { width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; font-size: 14px; outline: none; font-family: inherit; }
+  .form-group input:focus, .form-group select:focus { border-color: var(--green-light); }
+  .form-submit { width: 100%; padding: 12px; background: var(--green-dark); color: white; border: none; border-radius: 10px; font-size: 15px; font-weight: 600; cursor: pointer; margin-top: 4px; }
+  .form-submit:active { background: var(--green-mid); }
+
+  .items-search { width: 100%; padding: 12px 14px; border: 1px solid var(--border); border-radius: 10px; font-size: 14px; outline: none; margin-bottom: 12px; }
+  .items-list { max-height: 400px; overflow-y: auto; }
+  .item-card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 12px; margin-bottom: 8px; }
+  .item-card-top { display: flex; justify-content: space-between; align-items: flex-start; }
+  .item-name-badge { display: flex; align-items: center; gap: 8px; }
+  .item-name { font-weight: 600; font-size: 14px; }
+  .item-code { font-size: 11px; background: var(--green-pale); color: var(--green-dark); padding: 2px 8px; border-radius: 12px; }
+  .item-category { font-size: 11px; background: #fff3cd; color: #856404; padding: 2px 8px; border-radius: 12px; }
+  .item-prices { display: flex; gap: 12px; margin-top: 6px; font-size: 13px; }
+  .price-tag { display: flex; flex-direction: column; }
+  .price-label { font-size: 10px; color: var(--text-light); }
+  .price-val { font-weight: 600; color: var(--green-mid); }
+  .item-actions { display: flex; gap: 6px; }
+  .item-edit-btn { background: var(--green-pale); border: none; color: var(--green-dark); padding: 5px 10px; border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: 500; }
+  .item-del-btn { background: #fde8e8; border: none; color: var(--red); padding: 5px 10px; border-radius: 6px; cursor: pointer; font-size: 12px; font-weight: 500; }
+
+  /* BILLS PAGE */
+  .bill-filter { display: flex; gap: 8px; margin-bottom: 12px; }
+  .bill-filter input { flex: 1; padding: 10px 14px; border: 1px solid var(--border); border-radius: 10px; font-size: 14px; outline: none; }
+  .bills-list { max-height: 500px; overflow-y: auto; }
+  .bill-card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 14px; margin-bottom: 10px; cursor: pointer; }
+  .bill-card-header { display: flex; justify-content: space-between; align-items: center; }
+  .bill-number { font-weight: 700; font-size: 15px; color: var(--green-dark); }
+  .bill-amount { font-weight: 700; font-size: 16px; }
+  .bill-meta { font-size: 12px; color: var(--text-light); margin-top: 4px; }
+  .bill-card-actions { display: flex; gap: 8px; margin-top: 10px; }
+  .bill-action-btn { flex: 1; padding: 8px; border-radius: 8px; border: none; font-size: 13px; font-weight: 500; cursor: pointer; }
+  .bill-print-btn { background: var(--green-pale); color: var(--green-dark); }
+  .bill-del-btn { background: #fde8e8; color: var(--red); }
+  .bill-wifi-btn { background: #e8f4fd; color: #0066cc; }
+
+  /* MODAL */
+  .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.5); z-index: 200; display: none; align-items: flex-end; }
+  .modal-overlay.show { display: flex; }
+  .modal { background: var(--surface); border-radius: var(--radius) var(--radius) 0 0; padding: 20px; width: 100%; max-height: 90vh; overflow-y: auto; animation: slideUp 0.3s ease; }
+  @keyframes slideUp { from{transform:translateY(100%)} to{transform:translateY(0)} }
+  .modal-title { font-size: 18px; font-weight: 700; margin-bottom: 16px; }
+  .modal-close { position: absolute; right: 20px; top: 20px; background: var(--border); border: none; width: 32px; height: 32px; border-radius: 50%; cursor: pointer; font-size: 18px; display: flex; align-items: center; justify-content: center; }
+
+  /* PRINT RECEIPT */
+  .receipt-preview { font-family: 'Courier New', monospace; font-size: 13px; background: white; padding: 16px; border: 1px dashed var(--border); border-radius: 8px; white-space: pre; overflow-x: auto; }
+
+  /* TOAST */
+  .toast { position: fixed; bottom: 80px; left: 50%; transform: translateX(-50%); background: #333; color: white; padding: 10px 20px; border-radius: 24px; font-size: 14px; z-index: 300; opacity: 0; transition: opacity 0.3s; pointer-events: none; }
+  .toast.show { opacity: 1; }
+
+  /* WIFI PAGE */
+  .wifi-section { background: var(--surface); border-radius: var(--radius); padding: 16px; box-shadow: var(--shadow); margin-bottom: 14px; }
+  .status-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; margin-right: 6px; }
+  .status-dot.online { background: #2ecc71; }
+  .status-dot.offline { background: #e74c3c; }
+
+  /* CSV IMPORT */
+  .import-zone { border: 2px dashed var(--green-light); border-radius: var(--radius); padding: 24px; text-align: center; color: var(--text-mid); cursor: pointer; margin-bottom: 12px; }
+  .import-zone input[type=file] { display: none; }
+  
+  /* Bottom safe area */
+  .page { padding-bottom: 80px; }
+  
+  /* Empty state */
+  .empty-state { text-align: center; padding: 40px 20px; color: var(--text-light); }
+  .empty-icon { font-size: 48px; margin-bottom: 12px; }
+
+  /* Stats bar */
+  .stats-bar { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 16px; }
+  .stat-card { background: var(--surface); border-radius: 10px; padding: 12px; text-align: center; box-shadow: var(--shadow); }
+  .stat-val { font-size: 20px; font-weight: 700; color: var(--green-dark); }
+  .stat-label { font-size: 11px; color: var(--text-light); margin-top: 2px; }
+
+  @media print {
+    body * { visibility: hidden; }
+    .receipt-print-area, .receipt-print-area * { visibility: visible; }
+    .receipt-print-area { position: fixed; left: 0; top: 0; width: 72mm; font-family: monospace; font-size: 12px; }
+  }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="topbar-left">
+    <div class="topbar-logo">🛒</div>
+    <div class="topbar-title">Grocery Voice Billing</div>
+  </div>
+  <div class="topbar-right">
+    <button class="icon-btn" id="voice-btn" onclick="toggleVoice()" title="Voice">🎤</button>
+    <button class="icon-btn red-btn" onclick="showPage('bills')" title="Bills">🧾</button>
+    <button class="icon-btn" onclick="showSettingsModal()" title="Settings">⚙️</button>
+  </div>
+</div>
+
+<!-- Billing mode tabs -->
+<div class="mode-tabs" id="mode-tabs-bar">
+  <div class="mode-tab active" id="mode-voice" onclick="setMode('voice')">Voice Billing</div>
+  <div class="mode-tab" id="mode-manual" onclick="setMode('manual')">Manual Billing</div>
+</div>
+
+<!-- ===== BILLING PAGE ===== -->
+<div class="page active" id="page-billing">
+
+  <!-- Search bar -->
+  <div class="search-bar-row">
+    <div class="search-bar-wrap">
+      <span style="font-size:18px;color:#aaa">🔍</span>
+      <input type="text" id="item-search" placeholder="Scan barcode or search item"
+        oninput="showSuggestions(this.value)" onkeydown="if(event.key==='Enter') addFromSearch()">
+      <button class="scan-icon-btn" onclick="openBarcodeScanner()" title="Scan barcode">▦</button>
+    </div>
+    <button class="add-btn" onclick="addFromSearch()">Add</button>
+  </div>
+  <div class="suggestions" id="suggestions-box"></div>
+
+  <!-- Bill meta row -->
+  <div class="bill-meta-row">
+    <span><strong id="current-bill-no">Bill No: INV00001</strong></span>
+    <span>Date: <strong id="current-date">19/3/2026</strong></span>
+    <span>Time: <strong id="current-time">12:00</strong></span>
+  </div>
+
+  <!-- Customer strip -->
+  <div class="customer-strip">
+    <input type="text" id="customer-name" placeholder="Customer name (optional)">
+    <input type="text" id="customer-phone" placeholder="Phone" style="max-width:130px">
+  </div>
+
+  <!-- Cart table -->
+  <div class="cart-wrap">
+    <div class="cart-thead">
+      <div>No</div>
+      <div>Item Name</div>
+      <div>Qty</div>
+      <div>Rate</div>
+      <div>Amt</div>
+      <div></div>
+    </div>
+    <div class="cart-tbody" id="cart-body">
+      <div class="cart-empty-state">
+        <div class="ei">🛒</div>
+        <div>Cart is empty</div>
+        <div style="font-size:12px;margin-top:4px;color:#bbb">Use voice or search to add items</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Total bar -->
+  <div class="total-bar" id="total-bar" style="display:none">
+    <div class="total-bar-label">Total: <span>₹₹</span></div>
+    <div class="total-bar-amount" id="grand-total">₹0.00</div>
+  </div>
+
+  <!-- Discount row -->
+  <div class="discount-row" id="discount-row-strip" style="display:none">
+    <span>Discount %:</span>
+    <input type="number" id="discount-pct" min="0" max="100" value="0" oninput="updateTotals()">
+    <span id="discount-amt" style="color:#e63946;font-weight:600"></span>
+    <span style="flex:1"></span>
+    <span id="subtotal" style="font-size:12px;color:#888"></span>
+  </div>
+
+  <!-- Send to laptop button -->
+  <button class="send-laptop-btn" onclick="generateBill()">
+    📤 GENERATE &amp; PRINT BILL
+  </button>
+
+  <!-- Low stock alert -->
+  <div class="low-stock-bar" id="low-stock-bar">⚠️ <span id="low-stock-text"></span></div>
+
+  <!-- Mid action buttons -->
+  <div class="mid-actions">
+    <button class="mid-btn pause-btn" onclick="toggleVoice()">
+      <span class="mb-icon" id="mid-pause-icon">⏸</span>
+      <span id="mid-pause-label">Pause</span>
+    </button>
+    <button class="mid-btn clear-btn2" onclick="clearCart()">
+      <span class="mb-icon">🗑</span>Clear All
+    </button>
+    <button class="mid-btn grid-btn" onclick="saveBillOnly()">
+      <span class="mb-icon">💾</span>Save
+    </button>
+    <button class="mid-btn items-btn" onclick="showPage('items')">
+      <span class="mb-icon">⚙️</span>Items
+    </button>
+  </div>
+
+  <!-- Big orange SPEAK button -->
+  <div class="speak-btn-wrap">
+    <button class="speak-big-btn" id="speak-big-btn" onclick="toggleVoice()">
+      <div class="speak-mic-circle">🎤</div>
+      <div class="speak-text-wrap">
+        <div class="speak-kannada">ಮಾತನಾಡಲು ಹಚ್ಚಿಸಿ</div>
+        <div class="speak-english">Tap to Speak</div>
+        <div class="speak-lang">(Kannada / English)</div>
+      </div>
+    </button>
+    <div class="voice-heard-bar" id="voice-heard"></div>
+  </div>
+
+  <!-- Manual item name entry fallback -->
+  <div style="margin:4px 8px 6px;display:flex;gap:8px">
+    <input type="text" id="voice-fallback-input" 
+      placeholder="Or type item name here and press Enter..."
+      style="flex:1;padding:12px;border:1px solid #e0e0e0;border-radius:10px;font-size:15px;outline:none"
+      onkeydown="if(event.key==='Enter'){addFromSearch();this.value=''}"
+      oninput="document.getElementById('item-search').value=this.value;showSuggestions(this.value)">
+    <button onclick="addFromSearch();document.getElementById('voice-fallback-input').value=''" 
+      style="background:#1a472a;color:white;border:none;padding:12px 16px;border-radius:10px;font-size:15px;font-weight:700;cursor:pointer">+</button>
+  </div>
+
+</div>
+
+<!-- ===== BOTTOM TOTAL STRIP ===== -->
+<div class="bottom-total" id="bottom-total-strip">
+  <span class="bottom-total-icon">🧾</span>
+  <span class="bottom-total-text">Total :</span>
+  <span class="bottom-total-amount" id="bottom-grand-total">₹ 0.00</span>
+</div>
+
+<!-- ===== BOTTOM NAV ===== -->
+<div class="bottom-nav">
+  <button class="bottom-nav-btn" id="bn-billing" onclick="showPage('billing')">
+    <span class="bn-icon">🎤</span>Billing
+  </button>
+  <button class="bottom-nav-btn" id="bn-items" onclick="showPage('items')">
+    <span class="bn-icon">📦</span>Items
+  </button>
+  <button class="bottom-nav-btn" id="bn-import" onclick="showPage('import')">
+    <span class="bn-icon">📂</span>Import
+  </button>
+  <button class="bottom-nav-btn" id="bn-bills" onclick="showPage('bills')">
+    <span class="bn-icon">🧾</span>Bills
+  </button>
+  <button class="bottom-nav-btn" id="bn-settings" onclick="showSettingsModal()">
+    <span class="bn-icon">⚙️</span>Settings
+  </button>
+</div>
+
+
+<!-- ===== ITEMS DATABASE PAGE ===== -->
+<div class="page" id="page-items">
+
+  <div class="stats-bar">
+    <div class="stat-card">
+      <div class="stat-val" id="stat-items">0</div>
+      <div class="stat-label">Total Items</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-val" id="stat-grocery">0</div>
+      <div class="stat-label">Grocery</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-val" id="stat-fmcg">0</div>
+      <div class="stat-label">FMCG</div>
+    </div>
+  </div>
+
+  <div class="section-card">
+    <div class="section-title" id="item-form-title">➕ Add New Item</div>
+    <input type="hidden" id="edit-item-id">
+    <div class="form-row">
+      <div class="form-group" style="flex:2;min-width:160px">
+        <label>Item Name *</label>
+        <input type="text" id="item-name-in" placeholder="e.g. Basmati Rice">
+      </div>
+      <div class="form-group">
+        <label>Category</label>
+        <select id="item-cat-in">
+          <option value="grocery">Grocery</option>
+          <option value="fmcg">FMCG</option>
+          <option value="dairy">Dairy</option>
+          <option value="vegetables">Vegetables</option>
+          <option value="fruits">Fruits</option>
+          <option value="spices">Spices</option>
+          <option value="beverages">Beverages</option>
+          <option value="snacks">Snacks</option>
+          <option value="other">Other</option>
+        </select>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Manual Code</label>
+        <input type="text" id="item-code-in" placeholder="e.g. GRC001">
+      </div>
+      <div class="form-group">
+        <label>Barcode</label>
+        <input type="text" id="item-barcode-in" placeholder="Scan or type">
+      </div>
+      <div class="form-group">
+        <label>Unit / Billing Type</label>
+        <select id="item-unit-in" onchange="onUnitChange(this.value)">
+          <optgroup label="⚖️ Weighed (KG billing)">
+            <option value="kg">kg — Loose/Bulk (weighed)</option>
+            <option value="g">g — Grams</option>
+          </optgroup>
+          <optgroup label="📦 Counted (Piece billing)">
+            <option value="piece">piece — Each / Pcs</option>
+            <option value="packet">packet — Packet / Pkt</option>
+            <option value="litre">litre — Litre bottle</option>
+            <option value="ml">ml — ML pack</option>
+            <option value="gm">gm — GM pack</option>
+            <option value="bag">bag — Big bag (rice etc)</option>
+            <option value="box">box — Box / Carton</option>
+            <option value="dozen">dozen — Dozen</option>
+          </optgroup>
+        </select>
+        <div id="unit-hint" style="font-size:11px;color:var(--green-mid);margin-top:3px"></div>
+      </div>
+    </div>
+    <div class="form-row">
+      <div class="form-group">
+        <label>Purchase Rate (₹) *</label>
+        <input type="number" id="item-purchase-in" placeholder="0.00" min="0" step="0.01">
+      </div>
+      <div class="form-group">
+        <label>Selling Rate (₹) *</label>
+        <input type="number" id="item-selling-in" placeholder="0.00" min="0" step="0.01">
+      </div>
+      <div class="form-group">
+        <label>Stock Qty</label>
+        <input type="number" id="item-stock-in" placeholder="0" min="0">
+      </div>
+    </div>
+    <div style="display:flex;gap:8px">
+      <button class="form-submit" onclick="saveItem()" style="flex:2">💾 Save Item</button>
+      <button class="form-submit" onclick="clearItemForm()" style="flex:1;background:var(--text-light)">Clear</button>
+    </div>
+  </div>
+
+  <div class="section-card">
+    <div class="section-title">📋 Items List</div>
+    <input type="text" class="items-search" id="items-search" placeholder="🔍 Search by name, code, or barcode..." oninput="renderItemsList()">
+    <div class="items-list" id="items-list"></div>
+  </div>
+</div>
+
+<!-- ===== BILLS HISTORY PAGE ===== -->
+<div class="page" id="page-bills">
+
+  <div class="stats-bar">
+    <div class="stat-card">
+      <div class="stat-val" id="stat-bills">0</div>
+      <div class="stat-label">Total Bills</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-val" id="stat-today-bills">0</div>
+      <div class="stat-label">Today</div>
+    </div>
+    <div class="stat-card">
+      <div class="stat-val" id="stat-today-sales" style="font-size:14px">₹0</div>
+      <div class="stat-label">Today Sales</div>
+    </div>
+  </div>
+
+  <div class="bill-filter">
+    <input type="text" id="bill-search" placeholder="🔍 Search bill number, customer..." oninput="renderBillsList()">
+    <input type="date" id="bill-date-filter" onchange="renderBillsList()" style="padding:10px;border:1px solid var(--border);border-radius:10px;font-size:13px">
+  </div>
+
+  <div id="bills-list"></div>
+</div>
+
+<!-- ===== WIFI TRANSFER PAGE ===== -->
+<div class="page" id="page-wifi">
+  <div class="wifi-section">
+    <h3 style="margin-bottom:12px;color:var(--green-dark)">📡 WiFi Data Transfer</h3>
+    <div style="font-size:13px;color:var(--text-mid);margin-bottom:16px">
+      Transfer bills to computer or print directly over WiFi
+    </div>
+    <div style="margin-bottom:16px">
+      <span class="status-dot" id="wifi-status-dot" style="background:#e74c3c"></span>
+      <span id="wifi-status-text" style="font-size:14px">Not connected to WiFi</span>
+    </div>
+    <div class="form-group" style="margin-bottom:12px">
+      <label>Printer IP Address (Epson LX300+)</label>
+      <input type="text" id="printer-ip" placeholder="e.g. 192.168.1.100" value="">
+    </div>
+    <div class="form-group" style="margin-bottom:12px">
+      <label>Printer Port</label>
+      <input type="text" id="printer-port" placeholder="9100" value="9100">
+    </div>
+    <button class="form-submit" onclick="testPrinterConnection()">🔌 Test Connection</button>
+  </div>
+
+  <div class="wifi-section">
+    <h3 style="margin-bottom:12px;color:var(--green-dark)">📧 Share Bills</h3>
+    <button class="form-submit" onclick="shareAllBills()" style="margin-bottom:8px">📤 Share All Bills (JSON)</button>
+    <button class="form-submit" onclick="shareAllBillsCSV()" style="background:var(--amber);margin-bottom:8px">📊 Export Bills as CSV</button>
+    <button class="form-submit" onclick="shareItemsDB()" style="background:var(--green-mid)">📦 Export Items Database</button>
+  </div>
+
+  <div class="wifi-section">
+    <h3 style="margin-bottom:12px;color:var(--green-dark)">🖨️ Direct Print via Browser</h3>
+    <div style="font-size:13px;color:var(--text-mid);margin-bottom:12px">
+      Open bills in print dialog for thermal printer (72mm paper)
+    </div>
+    <button class="form-submit" onclick="printLastBill()">🖨️ Reprint Last Bill</button>
+  </div>
+</div>
+
+<!-- ===== IMPORT PAGE ===== -->
+<div class="page" id="page-import">
+
+  <!-- BIG PROMINENT DBF UPLOAD CARD -->
+  <div style="background:#1a472a;border-radius:14px;padding:20px;margin:8px 8px 14px;color:white;text-align:center">
+    <div style="font-size:40px;margin-bottom:8px">📦</div>
+    <div style="font-size:20px;font-weight:800;margin-bottom:6px">Upload Your Items Database</div>
+    <div style="font-size:14px;opacity:0.85;margin-bottom:16px">Upload your items.DBF file — all your shop items load instantly. Do this only once — items are saved permanently.</div>
+    <label style="display:block;background:#52b788;border-radius:12px;padding:16px;font-size:18px;font-weight:700;cursor:pointer;margin-bottom:10px" for="csv-file-input">
+      📂 TAP HERE TO UPLOAD items.DBF
+      <input type="file" id="csv-file-input" accept=".dbf,.csv,.DBF,.CSV" onchange="importAnyFile(event)" style="display:none">
+    </label>
+    <div style="font-size:12px;opacity:0.75">Also supports .csv files</div>
+  </div>
+
+  <!-- STATUS after import -->
+  <div id="import-status-card" style="display:none;background:#d8f3dc;border-radius:12px;padding:16px;margin:0 8px 14px;text-align:center">
+    <div style="font-size:24px;margin-bottom:6px">✅</div>
+    <div id="import-status-text" style="font-size:16px;font-weight:700;color:#1a472a"></div>
+    <div style="font-size:13px;color:#2d6a4f;margin-top:4px">Items saved permanently — no need to upload again!</div>
+    <button onclick="showPage('billing')" style="margin-top:12px;background:#1a472a;color:white;border:none;border-radius:10px;padding:12px 24px;font-size:15px;font-weight:700;cursor:pointer">
+      🎤 Start Billing Now
+    </button>
+  </div>
+
+  <!-- Bulk Price Update -->
+  <div class="section-card">
+    <div class="section-title" style="font-size:16px">💰 Update Item Prices</div>
+    <div style="font-size:13px;color:#555;margin-bottom:12px">Upload a DBF or CSV with updated prices — only prices change, items stay same</div>
+    <label style="display:block;background:#f0faf4;border:2px dashed #52b788;border-radius:10px;padding:16px;text-align:center;cursor:pointer;font-size:15px;font-weight:600;color:#1a472a" for="price-update-input">
+      💹 Upload Price Update File
+      <input type="file" id="price-update-input" accept=".dbf,.csv,.DBF,.CSV" onchange="importPriceUpdateAny(event)" style="display:none">
+    </label>
+  </div>
+
+  <!-- DBF format info -->
+  <div class="section-card">
+    <div class="section-title" style="font-size:16px">ℹ️ DBF Column Names Recognised</div>
+    <div style="font-size:13px;color:#555;line-height:2;background:#f8f9fa;padding:12px;border-radius:8px">
+      <code>NAME / DESC / ITEM_NAME</code> — Item name<br>
+      <code>SRATE / RATE / SELLING / MRP</code> — Selling rate<br>
+      <code>PRATE / PURCHASE / COST</code> — Purchase rate<br>
+      <code>CODE / ITEM_CODE</code> — Item code<br>
+      <code>BARCODE / EAN / EAN13</code> — Barcode<br>
+      <code>CLASSUNDER / CATEGORY / GROUP</code> — Category<br>
+      <code>QTY / QUANTITY / STOCK</code> — Stock<br>
+      <code>UNITS / UNIT / UOM</code> — Unit
+    </div>
+  </div>
+
+  <!-- Reset -->
+  <div class="section-card">
+    <div class="section-title" style="font-size:16px;color:#e63946">⚠️ Reset All Data</div>
+    <div style="font-size:13px;color:#555;margin-bottom:12px">Permanently deletes all items and bills</div>
+    <button onclick="resetAllData()" style="width:100%;padding:14px;background:#fde8e8;color:#e63946;border:1px solid #e63946;border-radius:10px;font-size:15px;font-weight:700;cursor:pointer">
+      🗑️ Reset All Data
+    </button>
+  </div>
+
+</div>
+
+
+<!-- BARCODE SCANNER MODAL -->
+<div class="modal-overlay" id="barcode-modal">
+  <div class="modal" style="position:relative;padding:0;overflow:hidden;border-radius:var(--radius) var(--radius) 0 0">
+    <div style="background:var(--green-dark);color:white;padding:14px 16px;display:flex;justify-content:space-between;align-items:center">
+      <span style="font-weight:700">📷 Scan Barcode</span>
+      <button onclick="closeBarcodeScanner()" style="background:rgba(255,255,255,0.2);border:none;color:white;width:32px;height:32px;border-radius:50%;cursor:pointer;font-size:18px">✕</button>
+    </div>
+    <div style="background:#000;position:relative;min-height:260px;display:flex;align-items:center;justify-content:center">
+      <video id="barcode-video" style="width:100%;max-height:280px;object-fit:cover" playsinline autoplay muted></video>
+      <div style="position:absolute;border:2px solid #52b788;width:220px;height:80px;border-radius:8px;pointer-events:none"></div>
+    </div>
+    <div style="padding:14px">
+      <div id="scan-status" style="text-align:center;font-size:13px;color:var(--text-mid);margin-bottom:10px">Point camera at barcode</div>
+      <div style="display:flex;gap:8px">
+        <input type="text" id="manual-barcode-input" placeholder="Or type barcode manually..."
+          style="flex:1;padding:10px 12px;border:1px solid var(--border);border-radius:8px;font-size:14px;outline:none">
+        <button onclick="lookupBarcode(document.getElementById('manual-barcode-input').value)"
+          style="background:var(--green-dark);color:white;border:none;padding:10px 16px;border-radius:8px;cursor:pointer;font-weight:600">Go</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- WEIGHT INPUT MODAL for KG items -->
+<div class="modal-overlay" id="weight-modal">
+  <div class="modal" style="position:relative">
+    <button class="modal-close" onclick="closeModal('weight-modal')">✕</button>
+    <div class="modal-title">⚖️ Enter Weight</div>
+    <div style="background:var(--green-pale);border-radius:8px;padding:10px 14px;margin-bottom:14px">
+      <div style="font-weight:700;font-size:16px" id="weight-item-name"></div>
+      <div style="font-size:13px;color:var(--green-mid)" id="weight-item-rate"></div>
+    </div>
+    <div style="font-size:13px;color:var(--text-mid);margin-bottom:8px">Enter weight in KG:</div>
+    <div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap">
+      <button onclick="setWeight(0.25)" style="flex:1;padding:10px;border:1px solid var(--border);border-radius:8px;background:var(--bg);cursor:pointer;font-size:13px;font-weight:600">250g</button>
+      <button onclick="setWeight(0.5)" style="flex:1;padding:10px;border:1px solid var(--border);border-radius:8px;background:var(--bg);cursor:pointer;font-size:13px;font-weight:600">500g</button>
+      <button onclick="setWeight(0.75)" style="flex:1;padding:10px;border:1px solid var(--border);border-radius:8px;background:var(--bg);cursor:pointer;font-size:13px;font-weight:600">750g</button>
+      <button onclick="setWeight(1)" style="flex:1;padding:10px;border:1px solid var(--border);border-radius:8px;background:var(--bg);cursor:pointer;font-size:13px;font-weight:600">1 kg</button>
+      <button onclick="setWeight(2)" style="flex:1;padding:10px;border:1px solid var(--border);border-radius:8px;background:var(--bg);cursor:pointer;font-size:13px;font-weight:600">2 kg</button>
+      <button onclick="setWeight(5)" style="flex:1;padding:10px;border:1px solid var(--border);border-radius:8px;background:var(--bg);cursor:pointer;font-size:13px;font-weight:600">5 kg</button>
+    </div>
+    <input type="number" id="weight-input" step="0.001" min="0.001"
+      style="width:100%;padding:14px;border:2px solid var(--green-light);border-radius:10px;font-size:20px;text-align:center;margin-bottom:6px;outline:none"
+      placeholder="e.g. 0.500" onkeydown="if(event.key==='Enter') confirmWeight()">
+    <div id="weight-preview" style="text-align:center;font-size:13px;color:var(--green-mid);margin-bottom:14px;min-height:20px"></div>
+    <button class="bill-btn primary" onclick="confirmWeight()" style="width:100%;font-size:16px">✅ Add to Cart</button>
+  </div>
+</div>
+
+<!-- RECEIPT MODAL -->
+<div class="modal-overlay" id="receipt-modal">
+  <div class="modal" style="position:relative">
+    <button class="modal-close" onclick="closeModal('receipt-modal')">✕</button>
+    <div class="modal-title">🧾 Bill Preview</div>
+    <div class="receipt-preview" id="receipt-content"></div>
+    <div style="display:flex;gap:8px;margin-top:14px">
+      <button class="bill-btn primary" onclick="printReceipt()">🖨️ Print Now</button>
+      <button class="bill-btn secondary" onclick="shareReceipt()">📤 Share</button>
+    </div>
+  </div>
+</div>
+
+<!-- ITEM EDIT MODAL -->
+<div class="modal-overlay" id="item-modal">
+  <div class="modal" style="position:relative">
+    <button class="modal-close" onclick="closeModal('item-modal')">✕</button>
+    <div class="modal-title" id="item-modal-title">Edit Item</div>
+    <div id="item-modal-body"></div>
+  </div>
+</div>
+
+<!-- BILL DETAIL MODAL -->
+<div class="modal-overlay" id="bill-detail-modal">
+  <div class="modal" style="position:relative;max-height:85vh;overflow-y:auto">
+    <button class="modal-close" onclick="closeModal('bill-detail-modal')">✕</button>
+    <div class="modal-title">Bill Details</div>
+    <div id="bill-detail-body"></div>
+  </div>
+</div>
+
+<!-- SETTINGS MODAL -->
+<div class="modal-overlay" id="settings-modal">
+  <div class="modal" style="position:relative">
+    <button class="modal-close" onclick="closeModal('settings-modal')">✕</button>
+    <div class="modal-title">⚙️ Settings</div>
+    <div class="form-group" style="margin-bottom:12px">
+      <label>Shop Name</label>
+      <input type="text" id="settings-shopname" placeholder="Your Shop Name">
+    </div>
+    <div class="form-group" style="margin-bottom:12px">
+      <label>Shop Address</label>
+      <input type="text" id="settings-address" placeholder="Address line 1">
+    </div>
+    <div class="form-group" style="margin-bottom:12px">
+      <label>Phone</label>
+      <input type="text" id="settings-phone" placeholder="Phone number">
+    </div>
+    <div class="form-group" style="margin-bottom:12px">
+      <label>GSTIN (optional)</label>
+      <input type="text" id="settings-gstin" placeholder="GST number">
+    </div>
+    <div class="form-group" style="margin-bottom:12px">
+      <label>Bill Prefix</label>
+      <input type="text" id="settings-prefix" placeholder="e.g. INV" value="INV">
+    </div>
+    <button class="form-submit" onclick="saveSettings()">💾 Save Settings</button>
+  </div>
+</div>
+
+<!-- Print area (hidden) -->
+<div id="print-area" style="display:none"></div>
+<div class="toast" id="toast"></div>
+
+<div id="receipt-print-area" class="receipt-print-area"></div>
+
+<script>
+// ================== DATA STORE ==================
+const DB = {
+  get: (k) => { try { return JSON.parse(localStorage.getItem(k)) || null } catch(e) { return null } },
+  set: (k, v) => localStorage.setItem(k, JSON.stringify(v)),
+  getItems: () => DB.get('sv_items') || [],
+  setItems: (v) => DB.set('sv_items', v),
+  getBills: () => DB.get('sv_bills') || [],
+  setBills: (v) => DB.set('sv_bills', v),
+  getSettings: () => DB.get('sv_settings') || { shopName: 'My Grocery Store', address: '', phone: '', gstin: '', prefix: 'INV', billCounter: 1 },
+  setSettings: (v) => DB.set('sv_settings', v),
+};
+
+// Sample items to get started
+function loadSampleData() {
+  // Items come from user's DBF file upload — not pre-loaded
+  if (DB.getItems().length > 0) return;
+  // No items yet — will prompt user to upload DBF
+}
+function uid() { return Math.random().toString(36).substr(2,9) + Date.now().toString(36); }
+
+// Cart state
+let cart = [];
+let currentBill = null;
+let isListening = false;
+let recognition = null;
+let lastPrintedBill = null;
+
+// ================== NAVIGATION ==================
+function showPage(name) {
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.bottom-nav-btn').forEach(b => b.classList.remove('active'));
+  const pg = document.getElementById('page-' + name);
+  if (pg) pg.classList.add('active');
+  const bn = document.getElementById('bn-' + name);
+  if (bn) bn.classList.add('active');
+  // Show/hide mode tabs (only on billing page)
+  const modeTabs = document.getElementById('mode-tabs-bar');
+  if (modeTabs) modeTabs.style.display = name === 'billing' ? 'flex' : 'none';
+  if (name === 'items') { renderItemsList(); updateStats(); }
+  if (name === 'bills') { renderBillsList(); updateBillStats(); }
+  if (name === 'import') { updateStats(); }
+  // Scroll to top
+  window.scrollTo(0, 0);
+}
+
+// ================== VOICE RECOGNITION ==================
+function checkVoiceSupport() {
+  const hasAPI = ('webkitSpeechRecognition' in window) || ('SpeechRecognition' in window);
+  const voiceBtn = document.getElementById('voice-btn');
+  if (!hasAPI) {
+    showToast('⚠️ Use Chrome browser for voice');
+    return false;
+  }
+  if (voiceBtn) voiceBtn.onclick = toggleVoice;
+  // Request mic permission — Android WebView grants it from manifest
+  if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+    navigator.mediaDevices.getUserMedia({ audio: true })
+      .then(() => { window.VOICE_ALLOWED = true; })
+      .catch(() => {});
+  }
+  return true;
+}
+
+function showVoiceFixModal() {
+  const isAndroid = /android/i.test(navigator.userAgent);
+  const msg = isAndroid ? `VOICE FIX — ANDROID PHONE
+━━━━━━━━━━━━━━━━━━━━━━━━
+
+Problem: Opening the HTML file directly 
+from phone storage blocks the microphone.
+Chrome requires https:// or localhost for voice.
+
+✅ SOLUTION — takes 2 minutes:
+
+BEST OPTION — Netlify (Voice works forever, free):
+  1. Go to netlify.com on any browser
+  2. Sign up free
+  3. Drag-drop the grocery-billing-app folder
+  4. You get: https://yourshop.netlify.app
+  5. Open that on any phone — voice works!
+  6. Add to Home Screen — done permanently
+
+OPTION 2 — SHTTPS+ App (Play Store):
+  1. Search Play Store: "Simple HTTP Server phlox"
+     OR search: "SHTTPS Android web server"
+  2. Install → open → select folder with index.html
+  3. Tap START → open Chrome → localhost:8080
+  4. Add to Home Screen
+  ⚠️ You need to start SHTTPS+ every time
+
+OPTION 3 — Allow mic in Chrome settings:
+  1. Open Chrome → tap 3 dots → Settings
+  2. Site Settings → Microphone
+  3. Find this file URL → Allow
+  (May work on some Android versions)
+
+Your items are PERMANENTLY saved —
+you never need to re-upload the DBF file.`
+  : `VOICE FIX — WINDOWS PC
+━━━━━━━━━━━━━━━━━━━━━━
+
+A .bat file is included with your download.
+Double-click "START_SERVER.bat" 
+→ Opens automatically on http://localhost:8080
+→ Voice works perfectly!
+
+OR: Upload to free hosting like netlify.com
+→ voice works from any device worldwide.`;
+  alert(msg);
+}
+
+function initVoice() {
+  if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) return;
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  recognition = new SR();
+  // en-IN catches English + Kannada/local words spoken in Indian accent
+  // kn-IN catches pure Kannada words like ಟೊಮೆಟೊ
+  recognition.lang = 'kn-IN';        // Kannada-first — catches TOGARE BELE, UDDINA BELE etc
+  recognition.continuous = true;      // Keep listening until user taps Stop — no need to tap for each item
+  recognition.interimResults = true;  // Show what is being heard in real time
+  recognition.maxAlternatives = 5;    // Try 5 alternatives — pick best match from all 5
+
+  let silenceTimer = null;
+
+  recognition.onstart = () => {
+    isListening = true;
+    document.getElementById('voice-btn').classList.add('listening');
+    document.getElementById('voice-btn').textContent = '⏹️';
+    syncVoiceUI(true);
+    showToast('🎤 Listening... speak item name');
+  };
+
+  recognition.onresult = (e) => {
+    clearTimeout(silenceTimer);
+    let interim = '', final = '';
+    for (let i = e.resultIndex; i < e.results.length; i++) {
+      if (e.results[i].isFinal) {
+        // Collect all alternatives and pick best match
+        const alts = [];
+        for (let a = 0; a < e.results[i].length; a++) {
+          alts.push(e.results[i][a].transcript.trim());
+        }
+        final = alts[0]; // use best by default
+        // Try all alternatives against our items DB
+        const bestAlt = getBestAlternative(alts);
+        if (bestAlt) final = bestAlt;
+      } else {
+        interim += e.results[i][0].transcript;
+      }
+    }
+    const heard = (final || interim).trim();
+    if (heard) {
+      const vh = document.getElementById('voice-heard');
+      if (vh) { vh.textContent = heard; vh.classList.add('show'); }
+    }
+    if (final) {
+      processVoiceInput(final.trim());
+      // After processing, keep listening (continuous mode)
+      // Small delay so user can see confirmation
+      silenceTimer = setTimeout(() => {
+        const vh = document.getElementById('voice-heard');
+        if (vh) vh.textContent = '';
+      }, 2500);
+    }
+  };
+
+  recognition.onerror = (e) => {
+    if (e.error === 'not-allowed') {
+      showToast('❌ Allow Microphone: Chrome Settings → Site Settings → Microphone');
+    } else if (e.error === 'no-speech') {
+      // Normal — just restart quietly
+    } else if (e.error === 'network') {
+      showToast('⚠️ No internet — voice needs internet connection');
+      stopVoice();
+    } else {
+      showToast('Voice error: ' + e.error);
+      stopVoice();
+    }
+  };
+
+  recognition.onend = () => {
+    // In continuous mode, auto-restart if still supposed to be listening
+    if (isListening) {
+      setTimeout(() => {
+        try { if (recognition && isListening) recognition.start(); }
+        catch(e) {}
+      }, 200);
+    } else {
+      syncVoiceUI(false);
+    }
+  };
+}
+
+// Try all speech alternatives against item database — return best match transcript
+function getBestAlternative(alts) {
+  const items = DB.getItems();
+  let bestText = null, bestScore = 0;
+  alts.forEach(alt => {
+    const score = getBestItemScore(alt.toLowerCase(), items);
+    if (score > bestScore) { bestScore = score; bestText = alt; }
+  });
+  return bestScore > 10 ? bestText : null;
+}
+
+function getBestItemScore(lower, items) {
+  let best = 0;
+  items.forEach(item => {
+    const s = matchScore(lower, item.name.toLowerCase());
+    if (s > best) best = s;
+  });
+  return best;
+}
+
+function toggleVoice() {
+  if (!recognition) initVoice();
+  if (isListening) { recognition.stop(); stopVoice(); return; }
+  try { recognition.start(); }
+  catch(e) {
+    recognition = null;
+    initVoice();
+    setTimeout(() => {
+      try { if(recognition) recognition.start(); }
+      catch(e2) { showToast('Mic error — allow microphone in Chrome'); }
+    }, 300);
+  }
+}
+
+function stopVoice() {
+  isListening = false;
+  const btn = document.getElementById('voice-btn');
+  btn.classList.remove('listening');
+  btn.textContent = '🎤';
+  btn.style.background = 'white';
+  btn.style.fontSize = '36px';
+  syncVoiceUI(false);
+}
+
+// ── Smart fuzzy match score ──────────────────────────────────────────────────
+// Handles: partial words, word-order independence, phonetic similarity,
+// abbreviations, Kannada transliterations (togare=toor, uddina=urad, etc.)
+const PHONETIC_MAP = {
+  // Kannada/local → English equivalents in item names
+  'togare':'togare toor tuar', 'toor':'togare toor',
+  'uddina':'uddina urad urid', 'urad':'uddina urad',
+  'kadale':'kadale chana gram', 'chana':'kadale chana',
+  'avare':'avare val beans',
+  'eerulli':'eerulli onion', 'onion':'eerulli onion',
+  'aalu':'aalu potato', 'potato':'aalu potato', 'gedde':'aalu gedde potato',
+  'tomato':'tomato tometo', 'tometo':'tomato',
+  'bella':'bella jaggery', 'jaggery':'bella',
+  'shakkare':'shakkare sugar', 'sugar':'shakkare sugar',
+  'uppu':'uppu salt', 'salt':'uppu salt',
+  'yenne':'yenne oil', 'oil':'yenne oil',
+  'bele':'bele dal', 'dal':'bele dal dhal',
+  'rave':'rave sooji semolina', 'sooji':'rave sooji',
+  'maida':'maida flour',
+  'rice':'rice akki', 'akki':'rice akki',
+  'atta':'atta godhi wheat flour hittu',
+  'sasive':'sasive mustard', 'mustard':'sasive mustard',
+  'jeerige':'jeerige jeera cumin', 'jeera':'jeerige jeera cumin',
+  'menthya':'menthya fenugreek', 'fenugreek':'menthya',
+  'menasu':'menasu chilli pepper', 'chilli':'menasu chilli',
+  'arishina':'arishina turmeric haldi', 'turmeric':'arishina turmeric',
+  'kobbari':'kobbari coconut', 'coconut':'kobbari',
+  'hing':'hing asafoetida', 'asafoetida':'hing',
+  'elakki':'elakki cardamom', 'cardamom':'elakki',
+  'lavanga':'lavanga clove', 'clove':'lavanga',
+  'drakshi':'drakshi raisin grapes', 'raisin':'drakshi',
+  'godambi':'godambi cashew', 'cashew':'godambi',
+  'badam':'badam almond', 'almond':'badam',
+  'hunise':'hunise tamarind', 'tamarind':'hunise',
+  'bellulli':'bellulli garlic', 'garlic':'bellulli',
+  'adde':'adde ginger', 'ginger':'adde shunthi',
+  'patre':'patre coleus', 'ajwain':'ajwain omum',
+};
+
+function matchScore(spoken, itemName) {
+  const s = spoken.trim().toLowerCase();
+  const n = itemName.toLowerCase();
+  if (!s || !n) return 0;
+  // Exact match
+  if (n === s) return 100;
+  // Item name contains spoken fully
+  if (n.includes(s)) return s.length > 3 ? 85 : 50;
+  // Spoken contains item name fully
+  if (s.includes(n)) return 75;
+
+  let score = 0;
+  const spokenWords = s.split(/\s+/).filter(w => w.length > 1);
+  const itemWords = n.split(/\s+/).filter(w => w.length > 1);
+
+  // Each spoken word vs each item word
+  spokenWords.forEach(sw => {
+    itemWords.forEach(iw => {
+      if (iw === sw) { score += 30; return; }
+      if (iw.startsWith(sw) && sw.length >= 3) { score += 22; return; }
+      if (sw.startsWith(iw) && iw.length >= 3) { score += 18; return; }
+      if (iw.includes(sw) && sw.length >= 3) { score += 14; return; }
+      // Phonetic map
+      const expansions = (PHONETIC_MAP[sw] || '').split(' ');
+      expansions.forEach(exp => {
+        if (exp && iw.includes(exp)) score += 20;
+        if (exp && exp.includes(iw)) score += 16;
+      });
+      // Reverse phonetic — item word maps to spoken word
+      const revExp = (PHONETIC_MAP[iw] || '').split(' ');
+      revExp.forEach(exp => {
+        if (exp && sw.includes(exp)) score += 16;
+      });
+      // Levenshtein-like: share 60%+ of chars in order
+      if (sw.length >= 4 && iw.length >= 4) {
+        let common = 0;
+        for (let c of sw) { if (iw.includes(c)) common++; }
+        if (common / sw.length > 0.7) score += 10;
+      }
+    });
+  });
+  return score;
+}
+
+function processVoiceInput(text) {
+  if (!text || text.trim().length < 2) return;
+  const spoken = text.trim();
+  const vh = document.getElementById('voice-heard');
+  if (vh) { vh.textContent = '🔍 ' + spoken; vh.classList.add('show'); }
+
+  const items = DB.getItems();
+  const lower = spoken.toLowerCase();
+
+  // Score every item
+  let scored = items.map(item => ({
+    item,
+    score: matchScore(lower, item.name.toLowerCase())
+  }));
+  scored.sort((a,b) => b.score - a.score);
+
+  const best = scored[0];
+  const MIN_SCORE = 12;
+
+  if (best && best.score >= MIN_SCORE) {
+    const found = best.item;
+    const isWt = isWeightItem(found.unit);
+    if (isWt) {
+      if (vh) vh.textContent = '⚖️ ' + found.name + ' — enter weight';
+      showWeightInput(found);
+    } else {
+      addToCart(found, 1);
+      if (vh) { vh.textContent = '✅ ' + found.name + ' added'; vh.classList.add('show'); }
+      speakConfirmation(found.name);
+      setTimeout(() => blinkLastQty(), 350);
+      setTimeout(() => { if(vh) vh.textContent = ''; }, 2500);
+    }
+  } else {
+    // Show top 3 near-matches as suggestions
+    const nearMatches = scored.slice(0,3).filter(s => s.score > 5).map(s => s.item.name).join(', ');
+    if (vh) vh.textContent = '❌ Not found: "' + spoken + '"' + (nearMatches ? '  Did you mean: ' + nearMatches + '?' : '');
+    showToast('Not found: "' + spoken + '"' + (nearMatches ? ' — Did you mean: ' + nearMatches + '?' : ''), 3500);
+    setTimeout(() => { if(vh) vh.textContent = ''; }, 3500);
+  }
+}
+
+function speakConfirmation(name) {
+  if ('speechSynthesis' in window) {
+    const u = new SpeechSynthesisUtterance(name + ' added');
+    u.lang = 'en-IN'; u.volume = 0.7; u.rate = 1.1;
+    speechSynthesis.speak(u);
+  }
+}
+
+// ================== UNIT HELPERS ==================
+// KG units = items sold by weight (loose); user types decimal weight
+const KG_UNITS = ['kg', 'g', 'gm'];
+function isWeightItem(unit) { return KG_UNITS.includes((unit||'').toLowerCase().trim()); }
+
+// ================== CART ==================
+function addToCart(item, qty) {
+  // For kg/weight items: show weight input dialog
+  if (isWeightItem(item.unit) && qty === undefined) {
+    showWeightInput(item);
+    return;
+  }
+  const qtyFinal = qty !== undefined ? qty : 1;
+  const existing = cart.find(c => c.id === item.id);
+  if (existing) {
+    existing.qty = parseFloat((existing.qty + qtyFinal).toFixed(3));
+    existing.price = item.selling;
+  } else {
+    cart.push({ id: item.id, name: item.name, category: item.category,
+                price: item.selling, qty: qtyFinal, unit: item.unit,
+                isWeight: isWeightItem(item.unit) });
+  }
+  renderCart();
+}
+
+// Weight input modal for kg items
+function showWeightInput(item) {
+  const existing = cart.find(c => c.id === item.id);
+  const overlay = document.getElementById('weight-modal');
+  document.getElementById('weight-item-name').textContent = item.name;
+  document.getElementById('weight-item-rate').textContent = '₹' + item.selling + ' per kg';
+  document.getElementById('weight-input').value = existing ? existing.qty : '';
+  document.getElementById('weight-input').placeholder = 'e.g. 0.500 for 500g, 1.250 for 1.25kg';
+  overlay._pendingItem = item;
+  overlay.classList.add('show');
+  setTimeout(() => document.getElementById('weight-input').focus(), 200);
+}
+
+function confirmWeight() {
+  const overlay = document.getElementById('weight-modal');
+  const item = overlay._pendingItem;
+  const w = parseFloat(document.getElementById('weight-input').value);
+  if (!w || w <= 0) { showToast('Enter valid weight!'); return; }
+  overlay.classList.remove('show');
+  const existing = cart.find(c => c.id === item.id);
+  if (existing) { existing.qty = parseFloat(w.toFixed(3)); existing.price = item.selling; }
+  else { cart.push({ id: item.id, name: item.name, category: item.category,
+                     price: item.selling, qty: parseFloat(w.toFixed(3)),
+                     unit: item.unit, isWeight: true }); }
+  renderCart();
+  const total = (item.selling * w).toFixed(2);
+  showToast('✅ ' + item.name + ' — ' + w + ' kg = ₹' + total);
+  speakConfirmation(item.name + ' ' + w + ' kilo, rupees ' + total);
+  // Clear voice heard label
+  const vh = document.getElementById('voice-heard');
+  if (vh) setTimeout(() => { vh.textContent = ''; }, 2500);
+}
+
+function renderCart() {
+  const body = document.getElementById('cart-body');
+  const totalBar = document.getElementById('total-bar');
+  const discRow = document.getElementById('discount-row-strip');
+  if (cart.length === 0) {
+    const noItems = DB.getItems().length === 0;
+    const prompt = document.getElementById('no-items-prompt');
+    if (prompt) prompt.style.display = noItems ? 'block' : 'none';
+    body.innerHTML = \`<div class="cart-empty-state"><div class="ei">🛒</div><div>Cart is empty</div><div style="font-size:12px;margin-top:4px;color:#bbb">Use voice or search to add items</div></div>\`;
+    totalBar.style.display = 'none';
+    discRow.style.display = 'none';
+    document.getElementById('bottom-grand-total').textContent = '₹ 0.00';
+    checkLowStock();
+    return;
+  }
+  totalBar.style.display = 'flex';
+  discRow.style.display = 'flex';
+
+  body.innerHTML = cart.map((item, idx) => {
+    const isWt = item.isWeight || isWeightItem(item.unit);
+    const qtyCell = isWt
+      ? `<div class="qty-cell">
+           <input class="qty-wt-input" type="number" value="${item.qty}" step="0.001" min="0.001"
+             onchange="updateCartQty(${idx}, this.value)" style="width:56px">
+           <span style="font-size:10px;color:#888;margin-left:2px">kg</span>
+         </div>`
+      : `<div class="qty-cell">
+           <button class="qty-minus" onclick="changeQty(${idx}, -1)">−</button>
+           <span class="qty-val">${item.qty}</span>
+           <button class="qty-plus" onclick="changeQty(${idx}, 1)">+</button>
+         </div>`;
+    const rateSub = isWt ? `<div class="row-name-sub">₹${item.price}/kg</div>` : '';
+    const rateTd  = isWt ? `<div class="row-rate" style="font-size:10px">${(item.qty*1000).toFixed(0)}g</div>` : `<div class="row-rate">₹${item.price}</div>`;
+    return `<div class="cart-row">
+      <div class="row-num">${idx+1}</div>
+      <div><div class="row-name">${item.name}</div>${rateSub}</div>
+      <div>${qtyCell}</div>
+      <div>${rateTd}</div>
+      <div class="row-amt">₹${(item.price*item.qty).toFixed(0)}</div>
+      <button class="row-del" onclick="removeFromCart(${idx})">✕</button>
+    </div>`;
+  }).join('');
+  updateTotals();
+  checkLowStock();
+}
+
+function updateCartPrice(idx, val) { cart[idx].price = parseFloat(val) || 0; renderCart(); }
+function updateCartQty(idx, val) {
+  const v = parseFloat(val);
+  if (!v || v <= 0) { cart.splice(idx, 1); } else { cart[idx].qty = parseFloat(v.toFixed(3)); }
+  renderCart();
+}
+function changeQty(idx, delta) {
+  cart[idx].qty += delta;
+  if (cart[idx].qty <= 0) cart.splice(idx, 1);
+  renderCart();
+}
+function removeFromCart(idx) { cart.splice(idx, 1); renderCart(); }
+function clearCart() { if (confirm('Clear all items from cart?')) { cart = []; renderCart(); } }
+
+function setWeight(w) {
+  document.getElementById('weight-input').value = w;
+  const item = document.getElementById('weight-modal')._pendingItem;
+  if (item) {
+    const total = (item.selling * w).toFixed(2);
+    document.getElementById('weight-preview').textContent = w + ' kg × ₹' + item.selling + ' = ₹' + total;
+  }
+}
+// Live preview as user types weight
+document.addEventListener('DOMContentLoaded', () => {
+  const wi = document.getElementById('weight-input');
+  if (wi) wi.addEventListener('input', () => {
+    const w = parseFloat(wi.value);
+    const item = document.getElementById('weight-modal')._pendingItem;
+    if (item && w > 0) {
+      document.getElementById('weight-preview').textContent = w + ' kg × ₹' + item.selling + ' = ₹' + (item.selling * w).toFixed(2);
+    } else {
+      document.getElementById('weight-preview').textContent = '';
+    }
+  });
+});
+
+function updateTotals() {
+  const sub = cart.reduce((a, c) => a + c.price * c.qty, 0);
+  const disc = parseFloat(document.getElementById('discount-pct').value) || 0;
+  const discAmt = sub * disc / 100;
+  const grand = sub - discAmt;
+  const grandStr = '₹' + grand.toFixed(2);
+  document.getElementById('grand-total').textContent = grandStr;
+  document.getElementById('bottom-grand-total').textContent = '₹ ' + grand.toFixed(2);
+  document.getElementById('subtotal').textContent = disc > 0 ? 'Sub: ₹'+sub.toFixed(2) : '';
+  document.getElementById('discount-amt').textContent = disc > 0 ? 'Disc: -₹'+discAmt.toFixed(2) : '';
+}
+
+// ================== SEARCH & SUGGESTIONS ==================
+function showSuggestions(query) {
+  const box = document.getElementById('suggestions-box');
+  if (!query || query.length < 1) { box.style.display = 'none'; return; }
+  const items = DB.getItems();
+  const lower = query.toLowerCase();
+  const found = items.filter(i =>
+    i.name.toLowerCase().includes(lower) ||
+    (i.code && i.code.toLowerCase().includes(lower)) ||
+    (i.barcode && i.barcode.includes(lower))
+  ).slice(0, 8);
+  if (found.length === 0) { box.style.display = 'none'; return; }
+  box.style.display = 'block';
+  box.innerHTML = found.map(i => `
+    <div class="suggestion-item" onclick="selectSuggestion('${i.id}')">
+      <span class="sug-name">${i.name}</span>
+      <span class="sug-price"> — ₹${i.selling}/${i.unit} ${['kg','g','gm'].includes((i.unit||'').toLowerCase()) ? '⚖️' : ''}</span>
+      <span style="font-size:11px;color:var(--text-light);margin-left:6px">[${i.code||i.category}]</span>
+    </div>
+  `).join('');
+}
+
+function selectSuggestion(id) {
+  const item = DB.getItems().find(i => i.id === id);
+  if (item) {
+    addToCart(item);
+    document.getElementById('item-search').value = '';
+    document.getElementById('suggestions-box').style.display = 'none';
+    showToast('✅ Added: ' + item.name);
+  }
+}
+
+function addFromSearch() {
+  const q = document.getElementById('item-search').value.trim();
+  if (!q) return;
+  const items = DB.getItems();
+  const found = items.find(i => i.name.toLowerCase() === q.toLowerCase() || i.code === q || i.barcode === q);
+  if (found) {
+    addToCart(found);
+    document.getElementById('item-search').value = '';
+    document.getElementById('suggestions-box').style.display = 'none';
+    showToast('✅ Added: ' + found.name);
+  } else {
+    const lower = q.toLowerCase();
+    const partial = items.find(i => i.name.toLowerCase().includes(lower));
+    if (partial) { addToCart(partial); document.getElementById('item-search').value = ''; document.getElementById('suggestions-box').style.display = 'none'; }
+    else showToast('Item not found: "' + q + '"');
+  }
+}
+
+// ================== BILLING ==================
+function generateBill() {
+  if (cart.length === 0) { showToast('Cart is empty!'); return; }
+  const bill = createBillObject();
+  saveBill(bill);
+  lastPrintedBill = bill;
+  showReceiptModal(bill);
+}
+
+function saveBillOnly() {
+  if (cart.length === 0) { showToast('Cart is empty!'); return; }
+  const bill = createBillObject();
+  saveBill(bill);
+  lastPrintedBill = bill;
+  showToast('✅ Bill #' + bill.billNo + ' saved!');
+  cart = [];
+  renderCart();
+  document.getElementById('customer-name').value = '';
+  document.getElementById('customer-phone').value = '';
+  document.getElementById('discount-pct').value = 0;
+}
+
+function createBillObject() {
+  const settings = DB.getSettings();
+  const sub = cart.reduce((a, c) => a + c.price * c.qty, 0);
+  const disc = parseFloat(document.getElementById('discount-pct').value) || 0;
+  const discAmt = sub * disc / 100;
+  const grand = sub - discAmt;
+  const counter = settings.billCounter || 1;
+  const billNo = settings.prefix + String(counter).padStart(5, '0');
+  settings.billCounter = counter + 1;
+  DB.setSettings(settings);
+  return {
+    id: uid(),
+    billNo,
+    date: new Date().toLocaleDateString('en-IN'),
+    time: new Date().toLocaleTimeString('en-IN'),
+    datetime: new Date().toISOString(),
+    customer: document.getElementById('customer-name').value || 'Walk-in',
+    phone: document.getElementById('customer-phone').value || '',
+    items: JSON.parse(JSON.stringify(cart)),
+    subtotal: sub,
+    discount: discAmt,
+    discountPct: disc,
+    total: grand,
+    shopName: settings.shopName,
+    shopAddress: settings.address,
+    shopPhone: settings.phone,
+    gstin: settings.gstin,
+  };
+}
+
+function saveBill(bill) {
+  const bills = DB.getBills();
+  bills.unshift(bill);
+  DB.setBills(bills);
+  updateBillNoDisplay();
+}
+
+// ================== RECEIPT FORMATTING ==================
+function formatReceipt(bill) {
+  const W = 32; // 72mm ~ 32 chars
+  const center = (s) => { const pad = Math.max(0, Math.floor((W - s.length) / 2)); return ' '.repeat(pad) + s; };
+  const line = (l, r) => { const gap = W - l.length - r.length; return l + ' '.repeat(Math.max(1, gap)) + r; };
+  const divider = '-'.repeat(W);
+  
+  // Sort: grocery first, then FMCG
+  const groceryOrder = ['grocery', 'dairy', 'vegetables', 'fruits', 'spices'];
+  const groceryItems = bill.items.filter(i => groceryOrder.includes(i.category));
+  const fmcgItems = bill.items.filter(i => !groceryOrder.includes(i.category));
+  const allSorted = [...groceryItems, ...fmcgItems];
+
+  let r = '';
+  r += center(bill.shopName || 'MY GROCERY STORE') + '\n';
+  if (bill.shopAddress) r += center(bill.shopAddress) + '\n';
+  if (bill.shopPhone) r += center('Ph: ' + bill.shopPhone) + '\n';
+  if (bill.gstin) r += center('GSTIN: ' + bill.gstin) + '\n';
+  r += divider + '\n';
+  r += line('Bill: ' + bill.billNo, bill.date) + '\n';
+  r += line('Time: ' + bill.time, '') + '\n';
+  r += line('Customer: ' + (bill.customer||'Walk-in').substr(0,16), bill.phone ? 'Ph:'+bill.phone : '') + '\n';
+  r += divider + '\n';
+  r += line('Item', 'Qty   Rate   Amt') + '\n';
+  r += divider + '\n';
+  
+  let section = '';
+  allSorted.forEach(item => {
+    const isSec = groceryOrder.includes(item.category) ? 'grocery' : 'fmcg';
+    if (isSec !== section) {
+      section = isSec;
+      if (section === 'fmcg' && groceryItems.length > 0) { r += divider + '\n'; r += center('-- FMCG Products --') + '\n'; }
+      else if (section === 'grocery' && groceryItems.length > 0) { r += center('-- Grocery --') + '\n'; }
+    }
+    const name = item.name.length > 14 ? item.name.substr(0, 14) : item.name.padEnd(14);
+    const isWt = item.isWeight || ['kg','g','gm'].includes((item.unit||'').toLowerCase());
+    const qtyStr = isWt ? item.qty.toFixed(3)+'kg' : String(item.qty);
+    const qty = qtyStr.padStart(6);
+    const rate = ('₹'+item.price.toFixed(0)).padStart(6);
+    const amt = ('₹'+(item.price*item.qty).toFixed(2)).padStart(7);
+    r += name + qty + rate + amt + '\n';
+  });
+  r += divider + '\n';
+  r += line('  SUBTOTAL', '₹' + bill.subtotal.toFixed(2)) + '\n';
+  if (bill.discount > 0) r += line('  DISCOUNT (' + bill.discountPct + '%)', '-₹' + bill.discount.toFixed(2)) + '\n';
+  r += divider + '\n';
+  r += line('  TOTAL', '₹' + bill.total.toFixed(2)) + '\n';
+  r += divider + '\n';
+  r += center('Thank you! Visit again!') + '\n';
+  r += center('Powered by ShopVoice') + '\n';
+  r += '\n\n\n';
+  return r;
+}
+
+function showReceiptModal(bill) {
+  document.getElementById('receipt-content').textContent = formatReceipt(bill);
+  document.getElementById('receipt-modal').classList.add('show');
+  cart = [];
+  renderCart();
+  document.getElementById('customer-name').value = '';
+  document.getElementById('customer-phone').value = '';
+  document.getElementById('discount-pct').value = 0;
+}
+
+
+// ── Android native print bridge ──────────────────────────────────────────────
+function printReceipt() {
+  const content = document.getElementById('receipt-content').textContent;
+  // Try Android native print
+  if (window.Android && window.Android.printBill) {
+    window.Android.printBill(content);
+    return;
+  }
+  // Fallback: open print window
+  const printWin = window.open('', '_blank', 'width=340,height=600');
+  if (printWin) {
+    printWin.document.write('<html><head><title>Bill</title><style>@page{size:72mm auto;margin:0}body{font-family:"Courier New",monospace;font-size:12px;width:72mm;margin:0;padding:4mm;white-space:pre}</style></head><body>' + content + '</body></html>');
+    printWin.document.close();
+    printWin.focus();
+    setTimeout(() => { printWin.print(); printWin.close(); }, 500);
+  } else {
+    // Android share fallback
+    if (navigator.share) navigator.share({ title: 'Bill', text: content });
+    else { navigator.clipboard && navigator.clipboard.writeText(content); showToast('Bill copied!'); }
+  }
+  closeModal('receipt-modal');
+}
+
+
+function shareReceipt() {
+  const content = document.getElementById('receipt-content').textContent;
+  if (navigator.share) {
+    navigator.share({ title: 'Bill', text: content });
+  } else {
+    navigator.clipboard.writeText(content);
+    showToast('Receipt copied to clipboard!');
+  }
+}
+
+// ================== ITEMS MANAGEMENT ==================
+function saveItem() {
+  const name = document.getElementById('item-name-in').value.trim();
+  const purchase = parseFloat(document.getElementById('item-purchase-in').value);
+  const selling = parseFloat(document.getElementById('item-selling-in').value);
+  if (!name) { showToast('Item name required!'); return; }
+  if (isNaN(purchase) || isNaN(selling)) { showToast('Enter valid prices!'); return; }
+  const editId = document.getElementById('edit-item-id').value;
+  const items = DB.getItems();
+  const item = {
+    id: editId || uid(),
+    name, 
+    category: document.getElementById('item-cat-in').value,
+    code: document.getElementById('item-code-in').value.trim() || autoCode(name, document.getElementById('item-cat-in').value),
+    barcode: document.getElementById('item-barcode-in').value.trim(),
+    purchase, selling,
+    unit: document.getElementById('item-unit-in').value,
+    stock: parseFloat(document.getElementById('item-stock-in').value) || 0,
+    updatedAt: new Date().toISOString(),
+  };
+  if (editId) {
+    const idx = items.findIndex(i => i.id === editId);
+    if (idx >= 0) items[idx] = item;
+  } else {
+    items.push(item);
+  }
+  DB.setItems(items);
+  clearItemForm();
+  renderItemsList();
+  updateStats();
+  showToast(editId ? '✅ Item updated!' : '✅ Item added!');
+}
+
+function autoCode(name, cat) {
+  const prefix = cat.substr(0, 3).toUpperCase();
+  const items = DB.getItems().filter(i => i.category === cat);
+  return prefix + String(items.length + 1).padStart(3, '0');
+}
+
+function clearItemForm() {
+  document.getElementById('edit-item-id').value = '';
+  document.getElementById('item-name-in').value = '';
+  document.getElementById('item-cat-in').value = 'grocery';
+  document.getElementById('item-code-in').value = '';
+  document.getElementById('item-barcode-in').value = '';
+  document.getElementById('item-purchase-in').value = '';
+  document.getElementById('item-selling-in').value = '';
+  document.getElementById('item-stock-in').value = '';
+  document.getElementById('item-unit-in').value = 'piece';
+  const hint = document.getElementById('unit-hint');
+  if (hint) hint.textContent = '';
+  document.getElementById('item-form-title').textContent = '➕ Add New Item';
+}
+
+function editItem(id) {
+  const item = DB.getItems().find(i => i.id === id);
+  if (!item) return;
+  document.getElementById('edit-item-id').value = id;
+  document.getElementById('item-name-in').value = item.name;
+  document.getElementById('item-cat-in').value = item.category;
+  document.getElementById('item-code-in').value = item.code || '';
+  document.getElementById('item-barcode-in').value = item.barcode || '';
+  document.getElementById('item-purchase-in').value = item.purchase;
+  document.getElementById('item-selling-in').value = item.selling;
+  document.getElementById('item-stock-in').value = item.stock || 0;
+  document.getElementById('item-unit-in').value = item.unit || 'kg';
+  document.getElementById('item-form-title').textContent = '✏️ Edit Item: ' + item.name;
+  document.getElementById('items-search').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  document.querySelector('#page-items .section-card').scrollIntoView({ behavior: 'smooth' });
+}
+
+function deleteItem(id) {
+  const item = DB.getItems().find(i => i.id === id);
+  if (!item) return;
+  if (!confirm('Delete "' + item.name + '"? This cannot be undone.')) return;
+  const items = DB.getItems().filter(i => i.id !== id);
+  DB.setItems(items);
+  renderItemsList();
+  updateStats();
+  showToast('🗑️ Item deleted');
+}
+
+function renderItemsList() {
+  const q = (document.getElementById('items-search') || {}).value || '';
+  const items = DB.getItems();
+  const lower = q.toLowerCase();
+  const filtered = q ? items.filter(i =>
+    i.name.toLowerCase().includes(lower) ||
+    (i.code && i.code.toLowerCase().includes(lower)) ||
+    (i.barcode && i.barcode.includes(lower)) ||
+    (i.category && i.category.toLowerCase().includes(lower))
+  ) : items;
+  const container = document.getElementById('items-list');
+  if (!container) return;
+  if (filtered.length === 0) {
+    container.innerHTML = '<div class="empty-state"><div class="empty-icon">📦</div><div>' + (q ? 'No items found' : 'No items yet. Add your first item!') + '</div></div>';
+    return;
+  }
+  const catOrder = ['grocery', 'vegetables', 'fruits', 'dairy', 'spices', 'fmcg', 'beverages', 'snacks', 'other'];
+  const sorted = [...filtered].sort((a, b) => {
+    const ai = catOrder.indexOf(a.category), bi = catOrder.indexOf(b.category);
+    if (ai !== bi) return (ai === -1 ? 99 : ai) - (bi === -1 ? 99 : bi);
+    return a.name.localeCompare(b.name);
+  });
+  container.innerHTML = sorted.map(item => `
+    <div class="item-card">
+      <div class="item-card-top">
+        <div>
+          <div class="item-name-badge">
+            <span class="item-name">${item.name}</span>
+            ${item.code ? `<span class="item-code">${item.code}</span>` : ''}
+            <span class="item-category">${item.category}</span>
+          </div>
+          <div class="item-prices">
+            <div class="price-tag">
+              <span class="price-label">Purchase</span>
+              <span class="price-val">₹${item.purchase}</span>
+            </div>
+            <div class="price-tag">
+              <span class="price-label">Selling</span>
+              <span class="price-val">₹${item.selling}/${item.unit} ${['kg','g','gm'].includes((item.unit||'').toLowerCase()) ? '⚖️' : '📦'}</span>
+            </div>
+            ${item.stock !== undefined ? `<div class="price-tag"><span class="price-label">Stock</span><span class="price-val">${item.stock} ${item.unit}</span></div>` : ''}
+          </div>
+          ${item.barcode ? `<div style="font-size:11px;color:var(--text-light);margin-top:4px">Barcode: ${item.barcode}</div>` : ''}
+        </div>
+        <div class="item-actions">
+          <button class="item-edit-btn" onclick="editItem('${item.id}')">✏️ Edit</button>
+          <button class="item-del-btn" onclick="deleteItem('${item.id}')">🗑️</button>
+        </div>
+      </div>
+    </div>
+  `).join('');
+}
+
+function updateStats() {
+  const items = DB.getItems();
+  document.getElementById('stat-items').textContent = items.length;
+  document.getElementById('stat-grocery').textContent = items.filter(i => ['grocery','vegetables','fruits','dairy','spices'].includes(i.category)).length;
+  document.getElementById('stat-fmcg').textContent = items.filter(i => i.category === 'fmcg').length;
+}
+
+// ================== BILLS MANAGEMENT ==================
+function renderBillsList() {
+  const bills = DB.getBills();
+  const q = (document.getElementById('bill-search') || {}).value || '';
+  const dateFilter = (document.getElementById('bill-date-filter') || {}).value || '';
+  const lower = q.toLowerCase();
+  let filtered = bills;
+  if (q) filtered = filtered.filter(b => b.billNo.toLowerCase().includes(lower) || (b.customer && b.customer.toLowerCase().includes(lower)) || (b.phone && b.phone.includes(q)));
+  if (dateFilter) {
+    const d = new Date(dateFilter).toLocaleDateString('en-IN');
+    filtered = filtered.filter(b => b.date === d);
+  }
+  const container = document.getElementById('bills-list');
+  if (!container) return;
+  if (filtered.length === 0) {
+    container.innerHTML = '<div class="empty-state"><div class="empty-icon">🧾</div><div>No bills found</div></div>';
+    return;
+  }
+  container.innerHTML = filtered.map(bill => `
+    <div class="bill-card" onclick="viewBill('${bill.id}')">
+      <div class="bill-card-header">
+        <span class="bill-number">${bill.billNo}</span>
+        <span class="bill-amount">₹${bill.total.toFixed(2)}</span>
+      </div>
+      <div class="bill-meta">${bill.date} ${bill.time} | ${bill.customer} ${bill.phone ? '| '+bill.phone : ''} | ${bill.items.length} items</div>
+      <div class="bill-card-actions" onclick="event.stopPropagation()">
+        <button class="bill-action-btn bill-print-btn" onclick="reprintBill('${bill.id}')">🖨️ Print</button>
+        <button class="bill-action-btn bill-wifi-btn" onclick="shareBill('${bill.id}')">📤 Share</button>
+        <button class="bill-action-btn bill-del-btn" onclick="deleteBill('${bill.id}')">🗑️ Delete</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+function viewBill(id) {
+  const bill = DB.getBills().find(b => b.id === id);
+  if (!bill) return;
+  document.getElementById('bill-detail-body').innerHTML = `
+    <div class="receipt-preview">${formatReceipt(bill)}</div>
+  `;
+  document.getElementById('bill-detail-modal').classList.add('show');
+}
+
+function reprintBill(id) {
+  const bill = DB.getBills().find(b => b.id === id);
+  if (!bill) return;
+  lastPrintedBill = bill;
+  document.getElementById('receipt-content').textContent = formatReceipt(bill);
+  document.getElementById('receipt-modal').classList.add('show');
+}
+
+function deleteBill(id) {
+  const bill = DB.getBills().find(b => b.id === id);
+  if (!bill) return;
+  if (!confirm('Delete bill ' + bill.billNo + '? This cannot be undone.')) return;
+  const bills = DB.getBills().filter(b => b.id !== id);
+  DB.setBills(bills);
+  renderBillsList();
+  updateBillStats();
+  showToast('🗑️ Bill deleted');
+}
+
+function shareBill(id) {
+  const bill = DB.getBills().find(b => b.id === id);
+  if (!bill) return;
+  const text = formatReceipt(bill);
+  if (navigator.share) navigator.share({ title: 'Bill ' + bill.billNo, text });
+  else { navigator.clipboard.writeText(text); showToast('Bill copied to clipboard!'); }
+}
+
+function updateBillStats() {
+  const bills = DB.getBills();
+  const today = new Date().toLocaleDateString('en-IN');
+  const todayBills = bills.filter(b => b.date === today);
+  document.getElementById('stat-bills').textContent = bills.length;
+  document.getElementById('stat-today-bills').textContent = todayBills.length;
+  document.getElementById('stat-today-sales').textContent = '₹' + todayBills.reduce((a, b) => a + b.total, 0).toFixed(0);
+}
+
+// ================== WIFI / EXPORT ==================
+function testPrinterConnection() {
+  showToast('📡 Testing connection... (requires network config on PC)');
+}
+
+function shareAllBills() {
+  const data = JSON.stringify(DB.getBills(), null, 2);
+  const blob = new Blob([data], { type: 'application/json' });
+  downloadBlob(blob, 'bills_' + new Date().toLocaleDateString('en-IN').replace(/\//g,'-') + '.json');
+}
+
+function shareAllBillsCSV() {
+  const bills = DB.getBills();
+  let csv = 'Bill No,Date,Time,Customer,Phone,Items,Subtotal,Discount,Total\n';
+  bills.forEach(b => {
+    csv += `"${b.billNo}","${b.date}","${b.time}","${b.customer}","${b.phone}","${b.items.map(i=>i.name+'x'+i.qty).join('; ')}","${b.subtotal}","${b.discount}","${b.total}"\n`;
+  });
+  downloadBlob(new Blob([csv], { type: 'text/csv' }), 'bills.csv');
+}
+
+function shareItemsDB() {
+  const items = DB.getItems();
+  let csv = 'name,category,code,barcode,purchase_rate,selling_rate,unit,stock\n';
+  items.forEach(i => {
+    csv += `"${i.name}","${i.category}","${i.code||''}","${i.barcode||''}","${i.purchase}","${i.selling}","${i.unit}","${i.stock||0}"\n`;
+  });
+  downloadBlob(new Blob([csv], { type: 'text/csv' }), 'items_database.csv');
+}
+
+function printLastBill() {
+  if (!lastPrintedBill) {
+    const bills = DB.getBills();
+    if (bills.length === 0) { showToast('No bills to print'); return; }
+    lastPrintedBill = bills[0];
+  }
+  document.getElementById('receipt-content').textContent = formatReceipt(lastPrintedBill);
+  document.getElementById('receipt-modal').classList.add('show');
+}
+
+function downloadBlob(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename; a.click();
+  URL.revokeObjectURL(url);
+  showToast('📥 Download started: ' + filename);
+}
+
+// ================== DBF PARSER ==================
+// Reads dBASE III / IV / FoxPro .dbf files (binary format)
+function parseDBF(buffer) {
+  const view = new DataView(buffer);
+  const bytes = new Uint8Array(buffer);
+
+  // Header
+  const version = view.getUint8(0);
+  const numRecords = view.getUint32(4, true);
+  const headerBytes = view.getUint16(8, true);
+  const recordBytes = view.getUint16(10, true);
+
+  // Field descriptors — each is 32 bytes, terminated by 0x0D
+  const fields = [];
+  let offset = 32;
+  while (offset < headerBytes - 1) {
+    if (bytes[offset] === 0x0D) break;
+    const nameBytes = bytes.slice(offset, offset + 11);
+    let name = '';
+    for (let i = 0; i < 11 && nameBytes[i] !== 0; i++) name += String.fromCharCode(nameBytes[i]);
+    const type = String.fromCharCode(bytes[offset + 11]);
+    const length = bytes[offset + 16];
+    fields.push({ name: name.trim().toUpperCase(), type, length });
+    offset += 32;
+  }
+
+  // Records
+  const decoder = new TextDecoder('windows-1252');
+  const records = [];
+  let recOffset = headerBytes;
+  for (let r = 0; r < numRecords; r++) {
+    const deletedFlag = bytes[recOffset];
+    if (deletedFlag === 0x2A) { recOffset += recordBytes; continue; } // deleted
+    const record = {};
+    let fieldOffset = recOffset + 1;
+    fields.forEach(f => {
+      const raw = bytes.slice(fieldOffset, fieldOffset + f.length);
+      record[f.name] = decoder.decode(raw).trim();
+      fieldOffset += f.length;
+    });
+    records.push(record);
+    recOffset += recordBytes;
+  }
+  return { fields, records };
+}
+
+// Map DBF field names — with smart unit detection for your actual DBF structure
+function mapDBFRecord(rec) {
+  const g = (keys) => {
+    for (const k of keys) {
+      const v = rec[k] || rec[k.toLowerCase()];
+      if (v && v.toString().trim()) return v.toString().trim();
+    }
+    return '';
+  };
+  const desc = g(['DESC','NAME','ITEM_NAME','ITEMNAME','PRODUCT','DESCRIPTION']);
+  const classunder = g(['CLASSUNDER','CATEGORY','CAT','GROUP','GRPNAME','GRP','DEPT','DEPARTMENT','TYPE']);
+  return {
+    name:     desc,
+    category: classunder,
+    code:     g(['CODE','ITEM_CODE','ITEMCODE','PROD_CODE','SKU','ICODE']),
+    barcode:  g(['BARCODE','BAR_CODE','EAN','EAN13','UPC','SCANCODE']),
+    purchase: g(['PRATE','PUR_RATE','PURCHASE','COST','COSTPRICE','PURRATE','CPRICE','PPRICE']),
+    selling:  g(['SRATE','RATE','SELL_RATE','SELLING','MRP','PRICE','SPRICE','SELLRATE']),
+    rawunit:  g(['UNITS','UNIT','UOM','UNITNAME','MEASUNIT']),
+    stock:    g(['QTY','QUANTITY','STOCK','ONHAND','OPENQTY','CURQTY']),
+  };
+}
+
+// Detect correct unit from item name + CLASSUNDER (tuned to your DBF)
+function detectItemUnit(desc, classunder) {
+  const d = (desc || '').toLowerCase();
+  const c = (classunder || '').toLowerCase();
+  const kgClasses = ['spices','pulsus','pulses','rices','basmathi rices','attas','salts','salt',
+    'wheat & wheat products','pure ghees',"hing's",'ssp hings','hings',
+    'soap nut powder','dhaniya','pannasari items','dry fruites','dry fruits',
+    'bella','bakers','condiments'];
+  if (kgClasses.some(kc => c.includes(kc))) {
+    if (/\d+\s*(gm|g\b|ml|ltr|lt\b)/.test(d)) return 'packet';
+    if (/\d+\s*kg/.test(d)) return 'bag';
+    return 'kg';
+  }
+  if (c.includes('oil') || c.includes('vanaspathi') || c.includes('edibel oil') || c.includes('edible oil')) {
+    if (/\d+\s*(ml)/.test(d)) return 'ml'; return 'litre';
+  }
+  if (/\d+\s*kg/.test(d)) return 'kg';
+  if (/\d+\s*(gm|g\b)/.test(d)) return 'gm';
+  if (/\d+\s*(ml)/.test(d)) return 'ml';
+  if (/\d+\s*(ltr|lt\b|litre|liter)/.test(d)) return 'litre';
+  return 'piece';
+}
+
+// Clean DESC — strip old software price annotations
+function cleanDesc(raw) {
+  if (!raw) return '';
+  let s = raw.trim();
+  s = s.replace(/^\s*[0-9+\-*/\\'^!@#$%&=~`]+\s*(?=[A-Z])/, '');
+  s = s.replace(/\s{3,}.*$/, '');
+  s = s.replace(/\s+[a-z]{1,3}[\d.]+\s*$/, '');
+  return s.trim();
+}
+
+// ================== UNIFIED IMPORT ==================
+function importAnyFile(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  const ext = file.name.split('.').pop().toLowerCase();
+  if (ext === 'dbf') {
+    importDBF(file, 'items');
+  } else {
+    const reader = new FileReader();
+    reader.onload = (e) => processCSVItems(e.target.result);
+    reader.readAsText(file);
+  }
+  event.target.value = '';
+}
+
+function importPriceUpdateAny(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+  const ext = file.name.split('.').pop().toLowerCase();
+  if (ext === 'dbf') {
+    importDBF(file, 'prices');
+  } else {
+    const reader = new FileReader();
+    reader.onload = (e) => processCSVPrices(e.target.result);
+    reader.readAsText(file);
+  }
+  event.target.value = '';
+}
+
+function importDBF(file, mode) {
+  showToast('⏳ Reading DBF file...');
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    try {
+      const { fields, records } = parseDBF(e.target.result);
+      if (records.length === 0) { showToast('DBF file is empty or unreadable!'); return; }
+      
+      if (mode === 'items') {
+        const items = DB.getItems();
+        let added = 0, updated = 0, skipped = 0;
+        records.forEach(rec => {
+          const mapped = mapDBFRecord(rec);
+          if (!mapped.name) { skipped++; return; }
+          const detectedUnit = detectItemUnit(mapped.name, mapped.category);
+          const item = {
+            id: uid(),
+            name: cleanDesc(mapped.name) || mapped.name,
+            category: normCategory(mapped.category) || 'grocery',
+            code: mapped.code || '',
+            barcode: mapped.barcode || '',
+            purchase: parseFloat(mapped.purchase) || 0,
+            selling: parseFloat(mapped.selling) || 0,
+            unit: detectedUnit,
+            stock: parseFloat(mapped.stock) || 0,
+          };
+          const idx = items.findIndex(x =>
+            x.name.toLowerCase() === item.name.toLowerCase() ||
+            (item.barcode && x.barcode === item.barcode) ||
+            (item.code && x.code === item.code)
+          );
+          if (idx >= 0) { items[idx] = { ...items[idx], ...item, id: items[idx].id }; updated++; }
+          else { items.push(item); added++; }
+        });
+        DB.setItems(items);
+        renderItemsList(); updateStats();
+        const msg = `✅ ${added + updated} items loaded! (${added} new, ${updated} updated)`;
+        showToast(msg);
+        // Show success card on import page
+        const sc = document.getElementById('import-status-card');
+        const st = document.getElementById('import-status-text');
+        if (sc && st) { st.textContent = msg; sc.style.display = 'block'; }
+        
+      } else if (mode === 'prices') {
+        const items = DB.getItems();
+        let updated = 0;
+        records.forEach(rec => {
+          const mapped = mapDBFRecord(rec);
+          const idx = items.findIndex(x => x.code === mapped.code || x.barcode === mapped.barcode || x.name.toLowerCase() === mapped.name.toLowerCase());
+          if (idx >= 0) {
+            if (mapped.purchase) items[idx].purchase = parseFloat(mapped.purchase);
+            if (mapped.selling) items[idx].selling = parseFloat(mapped.selling);
+            updated++;
+          }
+        });
+        DB.setItems(items);
+        renderItemsList();
+        showToast(`✅ DBF price update: ${updated} items updated`);
+      }
+    } catch(err) {
+      showToast('❌ DBF read error: ' + err.message);
+      console.error(err);
+    }
+  };
+  reader.readAsArrayBuffer(file);
+}
+
+function normCategory(raw) {
+  if (!raw) return 'grocery';
+  const r = raw.toLowerCase();
+  // Loose/bulk grocery — your DBF CLASSUNDER names
+  if (r.includes('pulsus') || r.includes('pulses') || r.includes('pulse') ||
+      r.includes('attas') || r.includes('atta') || r.includes('rices') || r.includes('rice') ||
+      r.includes('spice') || r.includes('masala') || r.includes('hings') || r.includes('hing') ||
+      r.includes('wheat') || r.includes('ghee') || r.includes('bella') ||
+      r.includes('soap nut') || r.includes('dhaniya') || r.includes('pannasari') ||
+      r.includes('dry fruit') || r.includes('condiment') || r.includes('salt') ||
+      r.includes('bakers') || r.includes('karpoora') || r.includes('pickle') ||
+      r.includes('edibel oil') || r.includes('edible oil') || r.includes('oil item') ||
+      r.includes('vanaspathi') || r.includes('vanaspati')) return 'grocery';
+  // Dairy
+  if (r.includes('dairy') || r.includes('milk') || r.includes('butter') ||
+      r.includes('amul') || r.includes('lactogen') || r.includes('cerelac')) return 'dairy';
+  // Beverages — your DBF: BEVARAGES, TEA POWDERS, COFFEE POWDERS, etc.
+  if (r.includes('beverage') || r.includes('bevara') || r.includes('tea') ||
+      r.includes('coffee') || r.includes('juice') || r.includes('rasna') ||
+      r.includes('glucose') || r.includes('energy') || r.includes('milo') ||
+      r.includes('complan') || r.includes('boost') || r.includes('horlick') ||
+      r.includes('nestle ceralac') || r.includes('milk beverage')) return 'beverages';
+  // Snacks — your DBF: BISCUITS, CHOCOLATES, LAYS KURKURE, HALDIRAMS
+  if (r.includes('biscuit') || r.includes('biscuti') || r.includes('chocolate') ||
+      r.includes('choclate') || r.includes('lays') || r.includes('kurkure') ||
+      r.includes('snack') || r.includes('wafer') || r.includes('garden snax') ||
+      r.includes('haldiram')) return 'snacks';
+  // All other packed FMCG items
+  return 'fmcg';
+}
+
+function normUnit(raw) {
+  if (!raw) return 'piece';
+  const r = raw.toLowerCase().trim();
+  if (r === 'kg' || r === 'kgs' || r === 'kilogram') return 'kg';
+  if (r === 'g' || r === 'gm' || r === 'gram' || r === 'grams') return 'g';
+  if (r === 'l' || r === 'ltr' || r === 'litre' || r === 'liter') return 'litre';
+  if (r === 'ml' || r === 'millilitre') return 'ml';
+  if (r === 'pcs' || r === 'pc' || r === 'piece' || r === 'nos' || r === 'no' || r === 'each') return 'piece';
+  if (r === 'pkt' || r === 'pack' || r === 'packet') return 'packet';
+  if (r === 'box' || r === 'carton') return 'box';
+  if (r === 'doz' || r === 'dozen') return 'dozen';
+  return r || 'piece';
+}
+
+// CSV processing (unchanged logic, just extracted)
+function processCSVItems(text) {
+  const lines = text.split('\n').filter(l => l.trim());
+  if (lines.length < 2) { showToast('CSV is empty!'); return; }
+  const headers = lines[0].split(',').map(h => h.trim().toLowerCase().replace(/['"]/g,''));
+  const items = DB.getItems();
+  let added = 0, updated = 0;
+  for (let i = 1; i < lines.length; i++) {
+    const vals = parseCSVLine(lines[i]);
+    const nameVal = vals[headers.indexOf('name')] || vals[headers.indexOf('item_name')] || vals[headers.indexOf('itemname')];
+    if (!nameVal) continue;
+    const item = {
+      id: uid(),
+      name: nameVal.trim(),
+      category: vals[headers.indexOf('category')]?.trim() || 'grocery',
+      code: vals[headers.indexOf('code')]?.trim() || '',
+      barcode: vals[headers.indexOf('barcode')]?.trim() || '',
+      purchase: parseFloat(vals[headers.indexOf('purchase_rate')] || vals[headers.indexOf('prate')] || 0),
+      selling: parseFloat(vals[headers.indexOf('selling_rate')] || vals[headers.indexOf('rate')] || 0),
+      unit: vals[headers.indexOf('unit')]?.trim() || 'piece',
+      stock: parseFloat(vals[headers.indexOf('stock')] || vals[headers.indexOf('qty')] || 0),
+    };
+    const existing = items.findIndex(x => x.name.toLowerCase() === item.name.toLowerCase() || (item.barcode && x.barcode === item.barcode));
+    if (existing >= 0) { items[existing] = { ...items[existing], ...item, id: items[existing].id }; updated++; }
+    else { items.push(item); added++; }
+  }
+  DB.setItems(items);
+  renderItemsList(); updateStats();
+  const csvMsg = `✅ ${added + updated} items loaded! (${added} new, ${updated} updated)`;
+  showToast(csvMsg);
+  const sc = document.getElementById('import-status-card');
+  const st = document.getElementById('import-status-text');
+  if (sc && st) { st.textContent = csvMsg; sc.style.display = 'block'; }
+}
+
+function processCSVPrices(text) {
+  const lines = text.split('\n').filter(l => l.trim());
+  if (lines.length < 2) return;
+  const items = DB.getItems();
+  let updated = 0;
+  for (let i = 1; i < lines.length; i++) {
+    const [code, purchase, selling] = parseCSVLine(lines[i]);
+    const idx = items.findIndex(x => x.code === code?.trim() || x.barcode === code?.trim());
+    if (idx >= 0) {
+      if (purchase) items[idx].purchase = parseFloat(purchase);
+      if (selling) items[idx].selling = parseFloat(selling);
+      updated++;
+    }
+  }
+  DB.setItems(items);
+  renderItemsList();
+  showToast(`✅ Updated prices for ${updated} items`);
+}
+
+function parseCSVLine(line) {
+  const result = [];
+  let current = '', inQuote = false;
+  for (const c of line) {
+    if (c === '"') inQuote = !inQuote;
+    else if (c === ',' && !inQuote) { result.push(current); current = ''; }
+    else current += c;
+  }
+  result.push(current);
+  return result.map(v => v.trim().replace(/^"|"$/g, ''));
+}
+
+function downloadSampleCSV() {
+  const sample = `name,category,code,barcode,purchase_rate,selling_rate,unit,stock
+Basmati Rice,grocery,GRC001,8901234560001,55,65,kg,100
+Parle-G Biscuit,fmcg,FMC001,8901719111014,5,7,packet,200
+Amul Milk,dairy,DAI001,8901063100064,24,28,litre,50
+Tomato,vegetables,VEG001,,20,30,kg,20
+Cumin Seeds,spices,SPC001,,220,260,kg,10`;
+  downloadBlob(new Blob([sample], { type: 'text/csv' }), 'sample_items_template.csv');
+}
+
+function downloadSampleDBF() {
+  const guide = `DBF FILE GUIDE FOR SHOPVOICE
+=============================
+
+Your DBF file (from Tally / FoxPro / dBASE) must have these fields.
+ShopVoice will automatically detect the column names.
+
+COLUMN NAMES RECOGNISED:
+─────────────────────────
+Item Name  : NAME, ITEM_NAME, ITEMNAME, PRODUCT, DESCRIPTION
+Sell Price : RATE, SELL_RATE, SELLING, MRP, PRICE
+Buy Price  : PRATE, PUR_RATE, PURCHASE, COST, CPRICE
+Item Code  : CODE, ITEM_CODE, ITEMCODE, SKU
+Barcode    : BARCODE, BAR_CODE, EAN, EAN13
+Stock Qty  : QTY, QUANTITY, STOCK, ONHAND
+Unit       : UNIT, UOM, UNITNAME
+Category   : CATEGORY, CAT, GROUP, GRPNAME, DEPT
+
+HOW TO EXPORT DBF FROM YOUR SOFTWARE:
+──────────────────────────────────────
+Tally ERP:
+  Gateway → Inventory → Stock Items → Export → DBF format
+
+FoxPro / Visual FoxPro:
+  COPY TO items.dbf TYPE DBF
+
+dBASE:
+  File → Export → dBASE format
+
+Busy Accounting:
+  Reports → Stock → Export to DBF
+
+Any billing software:
+  Look for Export / Backup → choose DBF format
+
+STEPS TO IMPORT IN SHOPVOICE:
+──────────────────────────────
+1. Export your items as .dbf file
+2. Transfer file to your Android phone
+   (via USB cable, WhatsApp, Bluetooth, or email)
+3. Open ShopVoice → Import tab
+4. Tap the import box → select your .dbf file
+5. Done! Items load automatically.
+
+NOTE: ShopVoice reads DBF versions 3, 4, and FoxPro format.
+`;
+  downloadBlob(new Blob([guide], { type: 'text/plain' }), 'DBF_Import_Guide.txt');
+}
+
+function showInstallGuide() {
+  const guide = `📱 HOW TO INSTALL SHOPVOICE ON OTHER DEVICES
+═══════════════════════════════════════════
+
+METHOD 1 — Send via WhatsApp / Telegram
+────────────────────────────────────────
+1. Open WhatsApp on this phone
+2. Send the file "index.html" to yourself
+   or to the other phone's number
+3. On the other phone:
+   - Open WhatsApp → tap the file
+   - Tap "Open in Chrome"
+   - Chrome menu (⋮) → Add to Home Screen
+   - Done! App installed ✅
+
+METHOD 2 — Bluetooth Transfer
+──────────────────────────────
+1. Enable Bluetooth on both phones
+2. Share "index.html" via Bluetooth
+3. On receiving phone:
+   - Open file in Chrome
+   - Add to Home Screen
+
+METHOD 3 — USB / File Transfer
+────────────────────────────────
+1. Copy index.html + sw.js + manifest.json
+   to a USB drive or memory card
+2. Insert in other phone/tablet
+3. Open index.html with Chrome
+4. Add to Home Screen
+
+METHOD 4 — Host Online (Best for Multiple Devices)
+────────────────────────────────────────────────────
+Upload to free hosting like:
+• netlify.com (drag-drop upload, free)
+• 000webhost.com (free)
+• GitHub Pages (free)
+
+Then share the URL — any phone worldwide
+can open and install the app!
+
+WORKS ON:
+✅ Any Android phone (Chrome browser)
+✅ Android tablets (Chrome)
+✅ iPhones / iPads (Safari)
+✅ Windows 7/8/10/11 PC (Chrome)
+✅ Mac (Chrome / Safari)
+
+SHARING DATA BETWEEN DEVICES:
+────────────────────────────────
+Each device stores its own data offline.
+To share items database:
+→ Transfer tab → Export Items Database
+→ Send the CSV to other devices
+→ They import it via Import tab`;
+
+  alert(guide);
+}
+
+
+// ================== SETTINGS ==================
+function showSettingsModal() {
+  const s = DB.getSettings();
+  document.getElementById('settings-shopname').value = s.shopName || '';
+  document.getElementById('settings-address').value = s.address || '';
+  document.getElementById('settings-phone').value = s.phone || '';
+  document.getElementById('settings-gstin').value = s.gstin || '';
+  document.getElementById('settings-prefix').value = s.prefix || 'INV';
+  document.getElementById('settings-modal').classList.add('show');
+}
+
+function saveSettings() {
+  const s = DB.getSettings();
+  s.shopName = document.getElementById('settings-shopname').value.trim() || 'My Grocery Store';
+  s.address = document.getElementById('settings-address').value.trim();
+  s.phone = document.getElementById('settings-phone').value.trim();
+  s.gstin = document.getElementById('settings-gstin').value.trim();
+  s.prefix = document.getElementById('settings-prefix').value.trim() || 'INV';
+  DB.setSettings(s);
+  document.getElementById('shop-name-display').textContent = s.shopName;
+  closeModal('settings-modal');
+  showToast('✅ Settings saved!');
+}
+
+function exportData() {
+  const data = {
+    items: DB.getItems(),
+    bills: DB.getBills(),
+    settings: DB.getSettings(),
+    exportDate: new Date().toISOString(),
+  };
+  downloadBlob(new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' }), 'shopvoice_backup_' + new Date().toISOString().substr(0,10) + '.json');
+}
+
+function resetAllData() {
+  if (!confirm('WARNING: This will delete ALL items and bills! Are you absolutely sure?')) return;
+  if (!confirm('FINAL WARNING: Click OK to permanently delete all data.')) return;
+  localStorage.removeItem('sv_items');
+  localStorage.removeItem('sv_bills');
+  localStorage.removeItem('sv_settings');
+  loadSampleData();
+  renderItemsList();
+  updateStats();
+  renderBillsList();
+  updateBillStats();
+  showToast('Data reset. Sample data loaded.');
+}
+
+// ================== MODAL & TOAST ==================
+function closeModal(id) { document.getElementById(id).classList.remove('show'); }
+document.querySelectorAll('.modal-overlay').forEach(m => {
+  m.addEventListener('click', (e) => {
+    if (e.target === m) {
+      if (m.id === 'barcode-modal') closeBarcodeScanner();
+      m.classList.remove('show');
+    }
+  });
+});
+
+function showToast(msg, duration = 2500) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), duration);
+}
+
+// ================== CHECK WIFI STATUS ==================
+function checkConnectivity() {
+  const dot = document.getElementById('wifi-status-dot');
+  const txt = document.getElementById('wifi-status-text');
+  if (navigator.onLine) {
+    dot.style.background = '#2ecc71';
+    txt.textContent = 'WiFi connected — Ready to share';
+  } else {
+    dot.style.background = '#e74c3c';
+    txt.textContent = 'Offline mode — Bills saved locally';
+  }
+}
+window.addEventListener('online', checkConnectivity);
+window.addEventListener('offline', checkConnectivity);
+
+
+// ================== BARCODE SCANNER ==================
+let barcodeStream = null;
+let barcodeInterval = null;
+let zxingReader = null;
+
+function openBarcodeScanner() {
+  document.getElementById('barcode-modal').classList.add('show');
+  document.getElementById('scan-status').textContent = 'Loading scanner...';
+  if (typeof ZXing === 'undefined') {
+    const s = document.createElement('script');
+    s.src = 'https://unpkg.com/@zxing/library@latest/umd/index.min.js';
+    s.onload = () => startBarcodeCamera();
+    s.onerror = () => startBarcodeCamera();
+    document.head.appendChild(s);
+  } else {
+    startBarcodeCamera();
+  }
+}
+
+function closeBarcodeScanner() {
+  stopBarcodeCamera();
+  if (zxingReader) { try { zxingReader.reset(); } catch(e){} zxingReader = null; }
+  document.getElementById('barcode-modal').classList.remove('show');
+}
+
+function startBarcodeCamera() {
+  const video = document.getElementById('barcode-video');
+  const status = document.getElementById('scan-status');
+  if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+    status.textContent = '❌ Camera not available — type barcode below';
+    return;
+  }
+  // ZXing works on ALL Android browsers
+  if (typeof ZXing !== 'undefined') {
+    try {
+      zxingReader = new ZXing.BrowserMultiFormatReader();
+      status.textContent = '📷 Point camera at barcode...';
+      zxingReader.decodeFromVideoDevice(null, video, (result, err) => {
+        if (result) {
+          const code = result.getText();
+          closeBarcodeScanner();
+          lookupBarcode(code);
+          showToast('✅ Scanned: ' + code);
+        }
+      });
+      return;
+    } catch(e) { console.log('ZXing err:', e); }
+  }
+  // Fallback: getUserMedia + BarcodeDetector
+  navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: 'environment' } } })
+    .then(stream => {
+      barcodeStream = stream;
+      video.srcObject = stream;
+      status.textContent = '📷 Camera on — point at barcode';
+      if ('BarcodeDetector' in window) {
+        const det = new BarcodeDetector();
+        barcodeInterval = setInterval(async () => {
+          if (video.readyState >= 2) {
+            try {
+              const res = await det.detect(video);
+              if (res.length > 0) { clearInterval(barcodeInterval); closeBarcodeScanner(); lookupBarcode(res[0].rawValue); }
+            } catch(e) {}
+          }
+        }, 300);
+      } else {
+        status.innerHTML = '📷 Camera on — type barcode below if not auto-detected';
+      }
+    })
+    .catch(() => {
+      status.textContent = '❌ Allow camera permission and try again';
+    });
+}
+
+function stopBarcodeCamera() {
+  if (barcodeInterval) { clearInterval(barcodeInterval); barcodeInterval = null; }
+  if (barcodeStream) { barcodeStream.getTracks().forEach(t => t.stop()); barcodeStream = null; }
+  const video = document.getElementById('barcode-video');
+  if (video) video.srcObject = null;
+}
+function lookupBarcode(code) {
+  if (!code || !code.trim()) return;
+  code = code.trim();
+  const items = DB.getItems();
+  const found = items.find(i => i.barcode === code || i.code === code);
+  if (found) {
+    document.getElementById('item-search').value = '';
+    document.getElementById('manual-barcode-input').value = '';
+    if (isWeightItem(found.unit)) {
+      showWeightInput(found);
+    } else {
+      addToCart(found, 1);
+      showToast('✅ ' + found.name + ' added');
+    }
+  } else {
+    document.getElementById('scan-status').textContent = '❌ Barcode not found: ' + code;
+    showToast('Barcode not in database: ' + code);
+    // Pre-fill search with barcode for manual lookup
+    document.getElementById('item-search').value = code;
+    showSuggestions(code);
+  }
+}
+
+// ================== UNIT CHANGE HINT ==================
+function onUnitChange(val) {
+  const hint = document.getElementById('unit-hint');
+  if (!hint) return;
+  if (val === 'kg' || val === 'g') {
+    hint.textContent = '⚖️ Weight entry popup will appear during billing';
+  } else {
+    hint.textContent = '📦 +/− quantity buttons during billing';
+  }
+}
+
+
+
+// Blink the qty cell of the last added item to prompt quantity editing
+function blinkLastQty() {
+  const rows = document.querySelectorAll('#cart-body .cart-row');
+  if (rows.length === 0) return;
+  const lastRow = rows[rows.length - 1];
+  const qtyCell = lastRow.querySelector('.qty-val, .qty-wt-input');
+  if (!qtyCell) return;
+  qtyCell.classList.add('qty-blink');
+  setTimeout(() => qtyCell.classList.remove('qty-blink'), 3000);
+}
+
+// ================== BILLING MODE TOGGLE ==================
+let billingMode = 'voice';
+function setMode(mode) {
+  billingMode = mode;
+  document.getElementById('mode-voice').classList.toggle('active', mode === 'voice');
+  document.getElementById('mode-manual').classList.toggle('active', mode === 'manual');
+  const speakWrap = document.querySelector('.speak-btn-wrap');
+  if (speakWrap) speakWrap.style.display = mode === 'voice' ? 'block' : 'none';
+}
+
+// ================== CLOCK & BILL NUMBER ==================
+function updateClock() {
+  try {
+    const now = new Date();
+    // Format: 19/3/2026
+    const day = now.getDate();
+    const month = now.getMonth() + 1;
+    const year = now.getFullYear();
+    const dateStr = day + '/' + month + '/' + year;
+    // Format time: 12:44 PM
+    let hours = now.getHours();
+    const minutes = String(now.getMinutes()).padStart(2, '0');
+    const ampm = hours >= 12 ? 'PM' : 'AM';
+    hours = hours % 12 || 12;
+    const timeStr = hours + ':' + minutes + ' ' + ampm;
+    const dateEl = document.getElementById('current-date');
+    const timeEl = document.getElementById('current-time');
+    if (dateEl) dateEl.textContent = dateStr;
+    if (timeEl) timeEl.textContent = timeStr;
+  } catch(e) {}
+}
+// Run clock immediately when script loads — no waiting
+updateClock();
+
+function updateBillNoDisplay() {
+  try {
+    const s = DB.getSettings();
+    const num = s.billCounter || 1;
+    const billNo = (s.prefix || 'INV') + String(num).padStart(5, '0');
+    const el = document.getElementById('current-bill-no');
+    if (el) el.textContent = 'Bill No: ' + billNo;
+  } catch(e) {}
+}
+
+// ================== LOW STOCK CHECKER ==================
+function checkLowStock() {
+  const items = DB.getItems();
+  const low = items.filter(i => i.stock !== undefined && i.stock > 0 && i.stock < 5);
+  const bar = document.getElementById('low-stock-bar');
+  const txt = document.getElementById('low-stock-text');
+  if (!bar || !txt) return;
+  if (low.length > 0) {
+    txt.textContent = low.slice(0,3).map(i => i.name + ' Low Stock!').join(' | ');
+    bar.classList.add('show');
+  } else {
+    bar.classList.remove('show');
+  }
+}
+
+// ================== VOICE UI SYNC ==================
+function syncVoiceUI(listening) {
+  const speakBtn = document.getElementById('speak-big-btn');
+  const voiceBtn = document.getElementById('voice-btn');
+  const midPause = document.getElementById('mid-pause-icon');
+  const midLabel = document.getElementById('mid-pause-label');
+  if (speakBtn) speakBtn.classList.toggle('listening', listening);
+  if (voiceBtn) { voiceBtn.textContent = listening ? '⏹️' : '🎤'; }
+  if (midPause) midPause.textContent = listening ? '⏹' : '⏸';
+  if (midLabel) midLabel.textContent = listening ? 'Stop' : 'Pause';
+  const vh = document.getElementById('voice-heard');
+  if (vh) vh.classList.toggle('show', listening);
+}
+
+// ================== INIT ==================
+function init() {
+  loadSampleData();
+  updateStats();
+  renderItemsList();
+  renderBillsList();
+  updateBillStats();
+  checkConnectivity();
+  const s = DB.getSettings();
+  if (s.shopName) {
+    const el = document.getElementById('shop-name-display');
+    if (el) el.textContent = s.shopName;
+  }
+  updateClock();
+  setInterval(updateClock, 1000); // update every second
+  updateBillNoDisplay();
+  checkLowStock();
+  const savedCount = DB.getItems().length;
+  if (savedCount > 0) {
+    setTimeout(() => showToast('✅ ' + savedCount + ' items loaded'), 700);
+  }
+  // Highlight billing tab on start
+  const bnBilling = document.getElementById('bn-billing');
+  if (bnBilling) bnBilling.classList.add('active');
+  const voiceReady = checkVoiceSupport();
+  if (voiceReady) initVoice();
+  // If no items loaded, go to import page
+  if (DB.getItems().length === 0) {
+    setTimeout(() => showPage('import'), 800);
+  }
+}
+
+document.addEventListener('DOMContentLoaded', init);
+</script>
+
+<!-- Service Worker Registration for PWA/Offline -->
+<script>
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('sw.js').catch(()=>{});
+}
+</script>
+</body>
+</html>
